@@ -97,9 +97,9 @@ class InitializeApp:
             st.warning(f'Processing Error: {e}', icon='⚠')
 
     def bitcoin(self):
+        valid_periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
+        valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1d', '5d', '1wk', '1mo', '3mo']
         try:
-            valid_periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
-            valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1d', '5d', '1wk', '1mo', '3mo']
             col1, col2 = st.columns(2)
             with col1:
                 period = st.selectbox('Period', valid_periods)
@@ -147,31 +147,51 @@ class InitializeApp:
             with col1:
                 Hour = int(st.selectbox('Hour', [i for i in range(120)]))
             with col2:
-                Min = int(st.number_input('Minute', min_value=1, max_value=60, step=1, value=5))
+                Min = int(st.number_input('Minute', min_value=0, max_value=60, step=1, value=5))
             with col3:
-                Sec = int(st.number_input('Second', min_value=0, max_value=60, step=1, value=0))
+                Sec = int(st.number_input('Second', min_value=0, max_value=60, step=1, value=1))
             col4, col5 = st.columns(2)
             with col4:
                 selection = st.selectbox('Select trade type', ['Short', 'Long', 'Both'])
             with col5:
-                interval = st.number_input('Interval between two search', min_value=5, max_value=300, value=10, step=5)
-            initiate_trade = InitiateBybitTrade(start_year=2020, start_month=8, start_day=1, start_hour=5,
-                                                start_minute=30, end_year=2024, end_month=4, end_day=29, end_hour=5,
-                                                end_min=30)
+                interval = st.number_input(
+                    'Interval between two search in Second', min_value=5, max_value=300, value=10, step=5
+                )
+            col6, col7 = st.columns(2)
+            with col6:
+                start_date = st.date_input(
+                    'Start Date', value=dt(2020, 1, 1), min_value=dt(2000, 1, 1),
+                    max_value=dt.now())
+            with col7:
+                end_date = st.date_input(
+                    'End Date', value='today', min_value=dt(2000, 1, 1))
+
             if st.form_submit_button('Start'):
-                try:
-                    check_internet()
-                    if selection == 'Short':
-                        data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
-                        st.dataframe(data)
-                    if selection == 'Long':
-                        data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
-                        st.dataframe(data)
-                    if selection == 'Both':
-                        data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
-                        st.dataframe(data)
-                except Exception as e:
-                    st.error(f'⚠ Got Error {e}')
+                if Hour != 0 or Min != 0 or Sec != 0:
+                    try:
+                        check_internet()
+                        # initiate_trade = InitiateBybitTrade(
+                        #     start_year=2020, start_month=1, start_day=1, start_hour=5, start_minute=30,
+                        #     end_year=2024, end_month=6, end_day=1, end_hour=5, end_min=30)
+                        initiate_trade = InitiateBybitTrade(
+                            start_date.year, start_date.month, start_date.day, 5, 30,
+                            end_date.year, end_date.month, end_date.day, 5, 30
+                        )
+                        if selection == 'Short':
+                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            st.dataframe(data)
+                        if selection == 'Long':
+                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            st.dataframe(data)
+                        if selection == 'Both':
+                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            st.dataframe(data)
+                    except Exception as e:
+                        logging.error(e)
+                        st.error(f'⚠ Got Error {e}')
+                        raise CustomException(e, sys)
+                else:
+                    st.warning('❌ Hour/Min/Sec can not be 0')
 
     def file_viewer(self):
         try:
