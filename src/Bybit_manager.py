@@ -10,12 +10,14 @@ import sys
 import os
 from src.utils import *
 from datetime import datetime as dt
+from datetime import timedelta
 from pybit.unified_trading import HTTP
 import streamlit as st
 import threading
 stop_event = threading.Event()
 import warnings
 warnings.filterwarnings('ignore')
+from pprint import pprint
 data_list = []
 
 
@@ -31,28 +33,29 @@ class BybitConnector:
         self._one_day_value_in_ms = 86400000
 
     @staticmethod
-    def date_to_millis(year, month, day, hour, minute, sec=0) -> int or str:
+    def date_to_millis(date_time: dt=None, *args) -> int:
         """
         Date to Millis
-        :param year:
-        :param month:
-        :param day:
-        :param hour:
-        :param minute:
-        :param sec:
+        :param: year, month, day, hour, minute, sec:
+        :param: date_time:
         :return millis:
         """
         try:
-            date = dt(year, month, day, hour, minute, sec)
-            date_obj = date.timestamp()
-            millis = int(date_obj * 1000)
-            return millis
+            if date_time is None and args is not None:
+                date = dt(*args)
+                date_obj = date.timestamp()
+                millis = int(date_obj * 1000)
+                return millis
+            else:
+                date_obj = date_time.timestamp()
+                millis = int(date_obj * 1000)
+                return millis
         except Exception as e:
             logging.error('date to millis error ', str(e))
             raise CustomException(e, sys)
 
     @staticmethod
-    def millis_to_date(value, ret_type='str') -> dt or str:
+    def millis_to_date(value: int, ret_type='datetime') -> dt or str:
         """
         Millis to date
         :param value: millis value:
@@ -82,7 +85,7 @@ class BybitConnector:
         :return:
         """
         date = {}
-        if args is None and kwargs is None:
+        if DateTime is None and args is None and kwargs is None:
             date['day'] = int(dt.now().strftime('%d'))
             date['month'] = int(dt.now().strftime('%m'))
             date['year'] = int(dt.now().strftime('%Y'))
@@ -132,28 +135,21 @@ class BybitConnector:
             logging.debug(f'Open interest not found {e}')
             return None
 
-    def get_market_data(self, interval, start_date_time_in_mils, end_date_time_in_mils, category="inverse",
-                        symbol="BTCUSD", interval_time="30min") -> Dict or None:
+    def get_market_data(self, start_date_time_in_mils, end_date_time_in_mils, category="inverse",
+                        symbol="BTCUSD", interval=30) -> Dict or None:
         """
         Gets market data or kline data
-        :param interval:
+        :param interval: 1,3,5,15,30,60,120,240,360,720,D,M,W::
         :param start_date_time_in_mils:
         :param end_date_time_in_mils:
         :param category: Product type. spot,linear,inverse:
         :param symbol:
-        :param interval_time: 1,3,5,15,30,60,120,240,360,720,D,M,W:
         :return:
         """
         try:
-            start_value = start_date_time_in_mils + (self._one_minute_value_in_ms * 30)
-            # This is where one minute converts into 30 minutes for 6AM morning time
-            end_value = end_date_time_in_mils + (self._one_minute_value_in_ms * 30)
-            # This is where one minute converts into 30 minutes for 6AM morning time
-
             market_data = self.__session.get_kline(
-                category=category, symbol=symbol, interval=interval, start=start_value, end=end_value
+                category=category, symbol=symbol, interval=interval, start=start_date_time_in_mils, end=end_date_time_in_mils
             )
-
             data_list = market_data['result']['list']
             df_list = []
             for item in data_list:
@@ -166,7 +162,6 @@ class BybitConnector:
                     'Volume': float(item[5]),
                     'Turnover': float(item[6]),
                 })
-
             return df_list[-1]
         except Exception as e:
             logging.debug(f'Data not found {e}')
@@ -174,82 +169,53 @@ class BybitConnector:
 
 
 class CheckAndExecuteTrade(BybitConnector):
-    def __init__(
-            self, start_year, start_month, start_day, start_hour, start_minute, end_year, end_month, end_day, end_hour,
-            end_min
-    ):
+    def __init__(self, start_datetime, end_datetime, interval):
         super().__init__()
-        self.start_year = start_year
-        self.start_month = start_month
-        self.start_day = start_day
-        self.start_hour = start_hour
-        self.start_min = start_minute
-        self.end_year = end_year
-        self.end_month = end_month
-        self.end_day = end_day
-        self.end_hour = end_hour
-        self.end_min = end_min
+        self.start_datetime = start_datetime
+        self.start_datetime_dic = self.get_datetime(start_datetime)
+        self.end_datetime = end_datetime
+        self.end_datetime_dic = self.get_datetime(end_datetime)
+        self.start_year = self.start_datetime_dic['year']
+        self.start_month = self.start_datetime_dic['month']
+        self.start_day = self.start_datetime_dic['day']
+        self.start_hour = self.start_datetime_dic['hour']
+        self.start_min = self.start_datetime_dic['minute']
+        self.end_year = self.end_datetime_dic['year']
+        self.end_month = self.end_datetime_dic['month']
+        self.end_day = self.end_datetime_dic['day']
+        self.end_hour = self.end_datetime_dic['hour']
+        self.end_min = self.end_datetime_dic['minute']
         self.ib_high = 0  # Initial Balance high
         self.ib_low = 0  # Initial Balance low
         self.tp_percent = 0.3 / 100  # 0.25% TP Take Profit
         self.sl_percent = 1.5 / 100  # 1.5% SL Stop Loss
         self.trade_setup = 0  # 0 - Only Short 1 - only long 2 - both long and short
-        self.interval = 1
-        self.valid_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
+        self.interval = interval
         self.serial_number = 1
 
-    def check_short_trade(self, duration, sleep_time: int = 5) -> None:
+    def check_short_trade(self) -> None:
         """
         Short trade checks if previous high price is in between current high and current close and executes short trade
-        :param duration:
-        :param sleep_time:
         """
-        start_time = time.time()
         global stop_event
-        message_container1 = st.empty()
-        message_container2 = st.empty()
-        message_container3 = st.empty()
-        message_container4 = st.empty()
-        message_container5 = st.empty()
-        message_container6 = st.empty()
-        test_container = st.empty()
         count = 0
-        start_date_time_in_mils = self.date_to_millis(
-            self.start_year, self.start_month, self.start_day, self.start_hour, self.start_min, 0)
-        six_am_candle_start_time = start_date_time_in_mils + (
-                self._one_minute_value_in_ms * 30)
-        # This is where one minute converts into 30 minutes for 6AM morning time
+        start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
+        end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
 
-        market_data = self.get_market_data(self.interval, six_am_candle_start_time, six_am_candle_start_time)
+        market_data = self.get_market_data(start_date_time_in_mills, start_date_time_in_mills, interval=self.interval)
         if market_data is not None:
             high_price = market_data['High']
-            while (time.time() - start_time) < duration:
-                cur_market_data = self.get_market_data(self.interval, six_am_candle_start_time, six_am_candle_start_time)
+            cur_date_time_in_mills = start_date_time_in_mills
+            while cur_date_time_in_mills < end_date_time_in_mills:
+                cur_market_data = self.get_market_data(
+                    cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
+                )
                 if market_data is not None:
-                    data = {
-                        "Sl No": None,
-                        "Date": None,
-                        "Day": None,
-                        "Trade Type": None,
-                        "IB_H": None,
-                        "IB_L": None,
-                        "IB%": None,
-                        "Open Interest": None,
-                        "Volume": None,
-                        "Turnover": None,
-                        "Entry Price": None,
-                        "Entry Time": None,
-                        "SL Price": None,
-                        "SL Time": None,
-                        "TP Price": None,
-                        "TP Time": None,
-                        "Total % Gain": None,
-                        "Win Loss No Trade": None
-                    }
+                    data = {}
                     data["Sl No"] = self.serial_number
-                    data["Date"] = self.millis_to_date(six_am_candle_start_time, ret_type='datetime').strftime(
+                    data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
                         '%d/%b/%Y')
-                    data["Day"] = self.millis_to_date(six_am_candle_start_time, ret_type='datetime').strftime("%a")
+                    data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Short"
                     data["IB_H"] = float(cur_market_data['High'])
                     data["IB_L"] = float(cur_market_data['Low'])
@@ -258,109 +224,56 @@ class CheckAndExecuteTrade(BybitConnector):
                                 (float(cur_market_data['High']) - float(cur_market_data['Low'])
                                  ) / float(cur_market_data['Low'])) * 100, 2
                     )
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    oi = self.get_open_interest(six_am_candle_start_time)
+                    data['Volume'] = float(cur_market_data['Volume'])
+                    data['Turnover'] = float(cur_market_data['Turnover'])
+                    print(f'Checking for short trade, count {count}, '
+                          f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
+
+                    oi = self.get_open_interest(cur_date_time_in_mills)
                     if oi:
-                        message_container2.caption(f'Open Interest: :green[{oi}]')
                         data['Open Interest'] = oi
-                    count += 1
-                    print(f'Checking for short trade, count {count}')
-                    message_container1.caption(
-                        f'Checking for short trade at :green[{self.millis_to_date(six_am_candle_start_time)}], '
-                        f'Check count :blue[{count}]'
-                    )
-                    message_container3.dataframe(pd.DataFrame([cur_market_data]), hide_index=True)
+                        print(f'Open Interest {oi}')
 
                     if cur_market_data['High'] > high_price > cur_market_data['Close']:
                         print("Condition for a short Trade Have been Found Executing Short Trade - Entry Price: ",
                               cur_market_data["Close"], "Executed at ",
-                              (self.millis_to_date(six_am_candle_start_time).strftime(
-                                  '%d/%b/%Y %H:%M:%S.%f %p')))
-                        message_container4.caption(
-                            ":green[Condition for a short Trade Have been Found Executing Short Trade - Entry Price: ]",
-                            cur_market_data['Close'], "Executed at ",
-                            (self.millis_to_date(six_am_candle_start_time).strftime(
-                                   '%d/%b/%Y %H:%M:%S.%f %p')))
-                        self.execute_short_trade(cur_market_data['Close'], six_am_candle_start_time, data)
-                        data["Entry Price"] = str(cur_market_data['Close'])
-                        data["Entry Time"] = str(dt.fromtimestamp(six_am_candle_start_time / 1000))
-                        break
+                              (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
+                        short_data = self.execute_short_trade(cur_market_data['Close'], cur_date_time_in_mills)
+                        short_data["Entry Price"] = float(cur_market_data['Close'])
+                        short_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
+                        data.update(short_data)
+                        data_list.append(data)
+                        cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                  timedelta(days=1))
 
-                    six_am_candle_start_time += self._one_minute_value_in_ms
-                    if six_am_candle_start_time > (start_date_time_in_mils + self._one_day_value_in_ms):
-                        print("Short Trade Setup Never occurred, Setup will continue checking the next day")
-                        message_container4.info(
-                            "red[Short Trade Setup Never occurred, Setup will continue checking the next day]")
-                        logging.info('Short trade not executed')
-                        data["Entry Price"] = None
-                        data["Entry Time"] = None
-                        data["SL Price"] = None
-                        data["SL Time"] = None
-                        data["TP Price"] = None
-                        data["TP Time"] = None
-                        data["Total % Gain"] = None
-                        data["Win Loss No Trade"] = None
-                        break
-
-                    message_container5.caption(
-                        f'Countdown timer :blue[{np.round((duration - (time.time() - start_time)) / 60, 2)} min]')
-                    message_container6.caption(dt.now().strftime('%d/%m/%Y %H:%M:%S.%f %p'))
+                    cur_date_time_in_mills += self._one_minute_value_in_ms
                     self.serial_number += 1
-                    data_list.append(data)
-                    time.sleep(sleep_time)
+                    count += 1
 
-    def check_for_long_trade(self, duration, sleep_time: int = 5) -> None:
+    def check_for_long_trade(self) -> None:
         """
         Long trade checks if previous low price is in between current close and current low and executes long trade
-        :param duration:
-        :param sleep_time:
         """
-        start_time = time.time()
         global stop_event
-        message_container1 = st.empty()
-        message_container2 = st.empty()
-        message_container3 = st.empty()
-        message_container4 = st.empty()
-        message_container5 = st.empty()
-        message_container6 = st.empty()
         count = 0
-        start_date_time_in_mils = self.date_to_millis(
-            self.start_year, self.start_month, self.start_day, self.start_hour, self.start_min, 0)
-        six_am_candle_start_time = start_date_time_in_mils + (
-                self._one_minute_value_in_ms * 30)
-        # This is where one minute converts into 30 minutes for 6AM morning time
+        start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
+        end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
 
-        market_data = self.get_market_data(self.interval, six_am_candle_start_time, six_am_candle_start_time)
+        market_data = self.get_market_data(start_date_time_in_mills, start_date_time_in_mills, interval=self.interval)
         if market_data is not None:
             low_price = market_data['Low']
-            while (time.time() - start_time) < duration:
-                cur_market_data = self.get_market_data(self.interval, six_am_candle_start_time, six_am_candle_start_time)
+            cur_date_time_in_mills = start_date_time_in_mills
+            while cur_date_time_in_mills < end_date_time_in_mills:
+                cur_market_data = self.get_market_data(
+                    cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
+                )
                 if market_data is not None:
-                    data = {
-                        "Sl No": None,
-                        "Date": None,
-                        "Day": None,
-                        "Trade Type": None,
-                        "IB_H": None,
-                        "IB_L": None,
-                        "IB%": None,
-                        "Open Interest": None,
-                        "Volume": None,
-                        "Turnover": None,
-                        "Entry Price": None,
-                        "Entry Time": None,
-                        "SL Price": None,
-                        "SL Time": None,
-                        "TP Price": None,
-                        "TP Time": None,
-                        "Total % Gain": None,
-                        "Win Loss No Trade": None
-                    }
+                    data = {}
                     data["Sl No"] = self.serial_number
-                    data["Date"] = self.millis_to_date(six_am_candle_start_time, ret_type='datetime').strftime(
+                    data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
                         '%d/%b/%Y')
-                    data["Day"] = self.millis_to_date(six_am_candle_start_time, ret_type='datetime').strftime("%a")
+                    data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Long"
                     data["IB_H"] = float(cur_market_data['High'])
                     data["IB_L"] = float(cur_market_data['Low'])
@@ -369,66 +282,35 @@ class CheckAndExecuteTrade(BybitConnector):
                                 (float(cur_market_data['High']) - float(cur_market_data['Low'])
                                  ) / float(cur_market_data['Low'])) * 100, 2
                     )
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    oi = self.get_open_interest(six_am_candle_start_time)
-                    if oi:
-                        message_container2.caption(f'Open Interest: :green[{oi}]')
-                        data['Open Interest'] = oi
-                    count += 1
-                    print(f"Checking for long trade, count {count}")
-                    message_container1.caption(
-                        f'Checking for short trade at :green[{self.millis_to_date(six_am_candle_start_time)}], '
-                        f'Check count: :blue[{count}]'
-                    )
-                    oi = self.get_open_interest(six_am_candle_start_time)
-                    if oi:
-                        message_container2.caption(f'Open Interest: :green[{oi}]')
-                        data['Open Interest'] = oi
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    message_container3.dataframe(pd.DataFrame([cur_market_data]), hide_index=True)
+                    data['Volume'] = float(cur_market_data['Volume'])
+                    data['Turnover'] = float(cur_market_data['Turnover'])
+                    print(f'Checking for long trade, count {count}, '
+                          f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
 
+                    oi = self.get_open_interest(cur_date_time_in_mills)
+                    if oi:
+                        data['Open Interest'] = oi
+                        print(f'Open Interest {oi}')
+                    data['Volume'] = cur_market_data['Volume']
+                    data['Turnover'] = cur_market_data['Turnover']
                     if cur_market_data['Close'] > low_price > cur_market_data['Low']:
                         print("Condition for a Long Trade Have been Found Executing Long Trade - Entry Price: ",
                               cur_market_data["Close"], "Executed at Time ",
-                              (dt.fromtimestamp(market_data["Start Time"] / 1000)))
-                        message_container4.caption(
-                            ":green[Condition for a Long Trade Have been Found Executing Long Trade - Entry Price: ]",
-                            cur_market_data['Close'], "Executed at Time ",
-                            (dt.fromtimestamp(market_data['Start Time'] / 1000)))
-                        self.execute_long_trade(cur_market_data['Close'], six_am_candle_start_time, data)
-                        logging.info('Long trade executed')
-                        data["Entry Price"] = str(cur_market_data['Close'])
-                        data["Entry Time"] = str(dt.fromtimestamp(six_am_candle_start_time / 1000))
-                        break
-                    six_am_candle_start_time += self._one_minute_value_in_ms
+                              (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
+                        short_data = self.execute_long_trade(cur_market_data['Close'], cur_date_time_in_mills)
+                        data["Entry Price"] = float(cur_market_data['Close'])
+                        data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
+                        data.update(short_data)
+                        data_list.append(data)
+                        cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                     timedelta(days=1))
 
-                    if six_am_candle_start_time > (start_date_time_in_mils + self._one_day_value_in_ms):
-                        print("Long Trade Setup Never occurred, Setup will continue checking the next day")
-                        message_container4.caption(
-                            ":red[Long Trade Setup Never occurred, Setup will continue checking the next day]"
-                        )
-                        logging.info('Long trade not executed')
-
-                        data["Entry Price"] = None
-                        data["Entry Time"] = None
-                        data["SL Price"] = None
-                        data["SL Time"] = None
-                        data["TP Price"] = None
-                        data["TP Time"] = None
-                        data["Total % Gain"] = None
-                        data["Win-Loss_NoTrade"] = None
-                        break
-
-                    message_container5.caption(
-                        f'Countdown timer :blue[{np.round((duration - (time.time() - start_time)) / 60, 2)} min]')
-                    message_container6.caption(dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p"))
+                    cur_date_time_in_mills += self._one_minute_value_in_ms
                     self.serial_number += 1
-                    data_list.append(data)
-                    time.sleep(sleep_time)
+                    count += 1
 
-    def execute_short_trade(self, entry_price, start_date_time_in_mils, short_data) -> None:
+    def execute_short_trade(self, entry_price, start_date_time_in_mils) -> Dict:
         """
         Win situation:-
         While current low price less than (entry price - entry price * take profit percentage)
@@ -440,59 +322,67 @@ class CheckAndExecuteTrade(BybitConnector):
         While candel_start_date_time_in_ms is greater than (market data start time - one min value * 30) + one day value
         if current close price less than entry price it is win else it is loss
         """
-        message_container1 = st.empty()
-        message_container2 = st.empty()
-        message_container3 = st.empty()
+        short_data = {}
+        count = 1
+        candel_start_date_time_in_ms = start_date_time_in_mils
         while True:
-            market_data = self.get_market_data(self.interval, start_date_time_in_mils, start_date_time_in_mils)
+            market_data = self.get_market_data(
+                candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
+            )
             if market_data is not None:
                 if market_data['Low'] < (float(entry_price) - (float(entry_price) * self.tp_percent)):
-                    print("Winning Short Trade Day at " + str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    message_container1.info(
-                        "Winning Short Trade Day at " + str((dt.fromtimestamp(start_date_time_in_mils / 1000)))
-                    )
+                    print("Winning Short Trade Day at " + str((dt.fromtimestamp(candel_start_date_time_in_ms / 1000))))
 
                     short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
-                    short_data["TP Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                    short_data["TP Time"] = str(market_data['Start Time'])
                     short_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
                     short_data["SL Time"] = None
                     short_data["Win Loss No Trade"] = 1
                     short_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
-                    break
+                    return short_data
                 if market_data['High'] > (
                         float(entry_price) + (float(entry_price) * self.sl_percent)):
                     print("Loosing  Short Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    message_container2.info(
-                        "Loosing  Short Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000)))
-                    )
 
                     short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
                     short_data["TP Time"] = None
                     short_data["SL Price"] = str(market_data['Close'])
-                    short_data["SL Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                    short_data["SL Time"] = str(market_data['Start Time'])
                     short_data["Win Loss No Trade"] = 0
                     short_data["Total % Gain"] = str((((entry_price - market_data['High']) / entry_price) * 100) * 10)
-                    break
+                    return short_data
 
-                candel_start_date_time_in_ms = start_date_time_in_mils + (self._one_minute_value_in_ms * self.interval)
+                candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
                 if candel_start_date_time_in_ms > (
-                        (market_data['Start Time'] - (self._one_minute_value_in_ms * 30)) + self._one_day_value_in_ms):
+                        (self.date_to_millis(market_data['Start Time']) - (self._one_minute_value_in_ms * 30)) +
+                        self._one_day_value_in_ms):
                     print("Trade Never Reached TP and Next day has has arrived, Closing at: " +
                           str(market_data['Close']))
-                    message_container3.info("Trade Never Reached TP and Next day has has arrived, Closing at: " +
-                            str(market_data['Close']), )
 
                     if market_data['Close'] < entry_price:
                         short_data["TP Price"] = str(market_data['Close'])
-                        short_data["TP Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                        short_data["TP Time"] = str(market_data['Start Time'])
                         short_data["Win Loss No Trade"] = 1
                     else:
                         short_data["SL Price"] = str((float(entry_price) + (float(entry_price) * self.sl_percent)))
                         short_data["SL Time"] = str(dt.fromtimestamp(candel_start_date_time_in_ms / 1000))
                         short_data["Win Loss No Trade"] = 0
-                    break
+                    return short_data
+                else:
+                    print(f'Retrying to execute, Count {count}',
+                          f'{self.millis_to_date(candel_start_date_time_in_ms, ret_type="str")}')
+                    count += 1
+                    if (self.millis_to_date(candel_start_date_time_in_ms).day <
+                            self.millis_to_date(start_date_time_in_mils).day):
+                        short_data["SL Price"] = None
+                        short_data["SL Time"] = None
+                        short_data["TP Price"] = None
+                        short_data["TP Time"] = None
+                        short_data["Total % Gain"] = None
+                        short_data["Win Loss No Trade"] = None
+                        return short_data
 
-    def execute_long_trade(self, entry_price, start_date_time_in_mils, long_data) -> None:
+    def execute_long_trade(self, entry_price, start_date_time_in_mils) -> Dict:
         """
         Win situation:-
         While current high greater than (entry price - entry price * take profit percentage)
@@ -504,48 +394,42 @@ class CheckAndExecuteTrade(BybitConnector):
         while candel_start_date_time_in_ms greater than (market data start time - one min value * 30) + one day value
         if current close price less than entry price it is win else it is loss
         """
-        message_container1 = st.empty()
-        message_container2 = st.empty()
-        message_container3 = st.empty()
 
+        long_data = {}
+        count = 1
+        candel_start_date_time_in_ms = start_date_time_in_mils
         while True:
-            market_data = self.get_market_data(self.interval, start_date_time_in_mils, start_date_time_in_mils)
+            market_data = self.get_market_data(
+                candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
+            )
             if market_data is not None:
                 if market_data['High'] > (float(entry_price) - (float(entry_price) * self.tp_percent)):
                     print("Winning Long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    message_container1.info(
-                        "Winning Long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000)))
-                    )
                     long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
-                    long_data["TP Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                    long_data["TP Time"] = str(market_data['Start Time'])
                     long_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
                     long_data["SL Time"] = None
                     long_data["Win Loss No Trade"] = 1
                     long_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
-                    break
+                    return long_data
                 if market_data['Low'] < (float(entry_price) + (float(entry_price) * self.sl_percent)):
                     print("Loosing  long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    message_container2.info(
-                        "Loosing  long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000)))
-                    )
                     long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
                     long_data["TP Time"] = None
                     long_data["SL Price"] = str(market_data['Close'])
-                    long_data["SL Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                    long_data["SL Time"] = str(market_data['Start Time'])
                     long_data["Win Loss No Trade"] = 0
                     long_data["Total % Gain"] = str((((entry_price - market_data['High']) / entry_price) * 100) * 10)
+                    return long_data
 
-                candel_start_date_time_in_ms = start_date_time_in_mils + (self._one_minute_value_in_ms * self.interval)
+                candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
                 if candel_start_date_time_in_ms > (
                         (market_data['Start Time'] - (self._one_minute_value_in_ms * 30)) + self._one_day_value_in_ms):
                     print("Trade Never Reached TP and Next day has has arrived, Closing at: " +
                           str(market_data['Close']))
-                    message_container3.info(
-                        "Trade Never Reached TP and Next day has has arrived, Closing at: " + str(market_data['Close'])
-                    )
                     if market_data['Close'] < entry_price:
                         long_data["TP Price"] = str(market_data['Close'])
-                        long_data["TP Time"] = str(dt.fromtimestamp(market_data['Start Time'] / 1000))
+                        long_data["TP Time"] = str(market_data['Start Time'] / 1000)
                         long_data["Win Loss No Trade"] = 1
                     else:
                         long_data["SL Price"] = str((float(entry_price) + (float(entry_price) * self.sl_percent)))
@@ -553,46 +437,45 @@ class CheckAndExecuteTrade(BybitConnector):
                         long_data["Win Loss No Trade"] = 0
                     break
 
+                else:
+                    print(f'Retrying to execute, Count {count}',
+                          f'{self.millis_to_date(candel_start_date_time_in_ms, ret_type="str")}')
+                    count += 1
+                    if (self.millis_to_date(candel_start_date_time_in_ms).day <
+                            self.millis_to_date(start_date_time_in_mils).day):
+                        long_data["SL Price"] = None
+                        long_data["SL Time"] = None
+                        long_data["TP Price"] = None
+                        long_data["TP Time"] = None
+                        long_data["Total % Gain"] = None
+                        long_data["Win Loss No Trade"] = None
+                        return long_data
 
 class InitiateBybitTrade(CheckAndExecuteTrade):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         pass
 
-    def check_for_both_long_and_short_trade(self, running_time_in_sec, sleep_time=5) -> None:
-        self.check_short_trade(running_time_in_sec, sleep_time)
-        self.check_for_long_trade(running_time_in_sec, sleep_time)
+    def check_for_both_long_and_short_trade(self) -> None:
+        short_trade = threading.Thread(target=self.check_short_trade)
+        long_trade = threading.Thread(target=self.check_for_long_trade)
+        short_trade.start()
+        long_trade.start()
+        short_trade.join()
+        long_trade.join()
 
-    def bitcoin_trade(self, running_time_in_sec, trade_selection, sleep_time=5) -> pd.DataFrame:
+    def bitcoin_trade(self, trade_selection,) -> pd.DataFrame:
         if trade_selection == 'Short':
-            self.check_short_trade(running_time_in_sec, sleep_time)
+            self.check_short_trade()
         elif trade_selection == 'Long':
-            self.check_for_long_trade(running_time_in_sec, sleep_time)
+            self.check_for_long_trade()
         elif trade_selection == 'Both':
-            self.check_for_both_long_and_short_trade(running_time_in_sec, sleep_time)
-        return pd.DataFrame(data_list)
-
-
-def running_time(Hour=0, Min=1, Sec=0):
-    return float(Hour * 3600 + Min * 60 + Sec)
+            self.check_for_both_long_and_short_trade()
+        return pd.DataFrame(data_list, index=None)
 
 
 if __name__ == '__main__':
     try:
-        check_internet()
-        initiate_trade = InitiateBybitTrade(start_year=2020, start_month=8, start_day=1, start_hour=5,
-                                            start_minute=30, end_year=2024, end_month=4, end_day=29, end_hour=5,
-                                            end_min=30)
-        # initiate_trade.bitcoin_trade(running_time, 'Short', 5)
-        # initiate_trade.bitcoin_trade(running_time, 'Long', 5)
-        # initiate_trade.check_for_both_long_and_short_trade(running_time, 5)
-        short_trade = threading.Thread(target=initiate_trade.bitcoin_trade, args=(running_time, 'Short', 5))
-        long_trade = threading.Thread(target=initiate_trade.bitcoin_trade, args=(running_time, 'Long', 5))
-        short_trade.start()
-        long_trade.start()
-        time.sleep(running_time())
-        stop_event.set()
-        short_trade.join()
-        long_trade.join()
+        pass
     except Exception as e:
         raise CustomException(e, sys)

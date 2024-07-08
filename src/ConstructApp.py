@@ -14,6 +14,7 @@ from streamlit.runtime.scriptrunner.script_run_context import (SCRIPT_RUN_CONTEX
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 from src.utils import *
 import time
+from datetime import timedelta
 
 
 class InitializeApp:
@@ -21,16 +22,21 @@ class InitializeApp:
         self.full_data = DataIngesion().get_data()
         self.sym_data = DataIngesion().get_data(market_cap=False)
         self.market_cap_data = DataIngesion().get_data(symbol=False)
+        self.bybit_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
+
+    @staticmethod
+    def start_loop():
+        st.session_state.loop_running = True
+
+    @staticmethod
+    def stop_loop():
+        st.session_state.loop_running = False
 
     def home(self):
         try:
             pass
         except Exception as e:
             st.warning(f'Processing Error: {e}', icon='⚠')
-
-    @staticmethod
-    def refresh_data():
-        pass
 
     def today(self):
         try:
@@ -140,58 +146,52 @@ class InitializeApp:
             check_internet()
         except:
             st.warning('⚠ Not connected to internet, Please connect to 🌐internet and 🔄refresh')
-        with st.form('form1'):
-            st.header('Search for Short trade or Long trade')
-            st.text('Run time of application')
+        with st.form('form_1'):
+            st.header('Search for Short or Long trade')
+            st.caption(str(dt.now().strftime('%d/%b/%Y %H:%M:%S.%f %p')))
             col1, col2, col3 = st.columns(3)
             with col1:
-                Hour = int(st.selectbox('Hour', [i for i in range(120)]))
-            with col2:
-                Min = int(st.number_input('Minute', min_value=0, max_value=60, step=1, value=5))
-            with col3:
-                Sec = int(st.number_input('Second', min_value=0, max_value=60, step=1, value=1))
-            col4, col5 = st.columns(2)
-            with col4:
-                selection = st.selectbox('Select trade type', ['Short', 'Long', 'Both'])
-            with col5:
-                interval = st.number_input(
-                    'Interval between two search in Second', min_value=5, max_value=300, value=10, step=5
-                )
-            col6, col7 = st.columns(2)
-            with col6:
                 start_date = st.date_input(
-                    'Start Date', value=dt(2020, 1, 1), min_value=dt(2000, 1, 1),
-                    max_value=dt.now())
-            with col7:
+                    'Start Date', value='today', min_value=dt(2000, 1, 1), max_value=dt.now()
+                )
+                start_hour = st.slider('Start hour', value=5, min_value=1, max_value=12)
+                start_min = st.slider('Start min', value=30, min_value=0, max_value=60, step=5)
+            with col2:
                 end_date = st.date_input(
-                    'End Date', value='today', min_value=dt(2000, 1, 1))
+                    'End Date', value='today', min_value=dt(2000, 1, 1), max_value=dt.now()
+                )
+                end_hour = st.slider('End hour', value=5, min_value=1, max_value=12)
+                end_min = st.slider('End min', value=30, min_value=0, max_value=60, step=5)
+            with col3:
+                selection = st.selectbox('Select trade type', ['Short', 'Long', 'Both'])
+                interval = st.selectbox('Interval', self.bybit_intervals)
 
-            if st.form_submit_button('Start'):
-                if Hour != 0 or Min != 0 or Sec != 0:
-                    try:
-                        check_internet()
-                        # initiate_trade = InitiateBybitTrade(
-                        #     start_year=2020, start_month=1, start_day=1, start_hour=5, start_minute=30,
-                        #     end_year=2024, end_month=6, end_day=1, end_hour=5, end_min=30)
-                        initiate_trade = InitiateBybitTrade(
-                            start_date.year, start_date.month, start_date.day, 5, 30,
-                            end_date.year, end_date.month, end_date.day, 5, 30
-                        )
+            if st.form_submit_button('Start', on_click=self.start_loop()):
+                try:
+                    check_internet()
+                    start_datetime = dt(start_date.year, start_date.month, start_date.day, start_hour, start_min)
+                    end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
+                    if start_datetime < end_datetime:
+                        initiate_trade = InitiateBybitTrade(start_datetime, end_datetime, interval)
                         if selection == 'Short':
-                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            with st.spinner('Wait while checking...'):
+                                data = initiate_trade.bitcoin_trade(selection)
                             st.dataframe(data)
                         if selection == 'Long':
-                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            with st.spinner('Wait while checking...'):
+                                data = initiate_trade.bitcoin_trade(selection)
                             st.dataframe(data)
                         if selection == 'Both':
-                            data = initiate_trade.bitcoin_trade(running_time(Hour, Min, Sec), selection, interval)
+                            with st.spinner('Wait while checking...'):
+                                data = initiate_trade.bitcoin_trade(selection)
+                                data.to_csv(DataIngesionConfig.bybit_test_data, index=False)
                             st.dataframe(data)
-                    except Exception as e:
-                        logging.error(e)
-                        st.error(f'⚠ Got Error {e}')
-                        raise CustomException(e, sys)
-                else:
-                    st.warning('❌ Hour/Min/Sec can not be 0')
+                    else:
+                        st.warning('Check Start date and End date')
+                except Exception as e:
+                    logging.error(e)
+                    st.error(f'⚠ Got Error {e}')
+                    raise CustomException(e, sys)
 
     def file_viewer(self):
         try:

@@ -13,6 +13,7 @@ class DataIngesionConfig:
     data_url = r'https://www.nseindia.com/regulations/listing-compliance/nse-market-capitalisation-all-companies'
     data_path = r'artifacts/data.xlsx'
     notebook_data_path = r'notebook/data.xlsx'
+    bybit_test_data = r'artifacts/bybit_data.csv'
 
 
 class DataIngesion:
@@ -42,7 +43,17 @@ class DataIngesion:
                 data.columns = ['Symbol', 'Name', 'Market Cap (in Lakhs)']
             return data
         except Exception as e:
-            CustomException(e, sys)
+            logging.error(e)
+            raise CustomException(e, sys)
+
+    def get_bybit_data(self):
+        try:
+            data = pd.read_csv(self.config.bybit_test_data, index_col=False)
+            return data
+        except Exception as e:
+            logging.error(e)
+            raise CustomException(e, sys)
+
 
 
 
