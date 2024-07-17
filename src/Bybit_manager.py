@@ -169,7 +169,7 @@ class BybitConnector:
 
 
 class CheckAndExecuteTrade(BybitConnector):
-    def __init__(self, start_datetime, end_datetime, interval):
+    def __init__(self, start_datetime, end_datetime, interval, tp_percent=0.25, sl_percent=1.5):
         super().__init__()
         self.start_datetime = start_datetime
         self.start_datetime_dic = self.get_datetime(start_datetime)
@@ -180,16 +180,17 @@ class CheckAndExecuteTrade(BybitConnector):
         self.start_day = self.start_datetime_dic['day']
         self.start_hour = self.start_datetime_dic['hour']
         self.start_min = self.start_datetime_dic['minute']
+        self.start_time_millis = (self.start_hour * 60 * 60000) + (self.start_min * 60000)
         self.end_year = self.end_datetime_dic['year']
         self.end_month = self.end_datetime_dic['month']
         self.end_day = self.end_datetime_dic['day']
         self.end_hour = self.end_datetime_dic['hour']
         self.end_min = self.end_datetime_dic['minute']
+        self.end_time_millis = (self.end_hour * 60 * 60000) + (self.end_min * 60000)
         self.ib_high = 0  # Initial Balance high
         self.ib_low = 0  # Initial Balance low
-        self.tp_percent = 0.3 / 100  # 0.25% TP Take Profit
-        self.sl_percent = 1.5 / 100  # 1.5% SL Stop Loss
-        self.trade_setup = 0  # 0 - Only Short 1 - only long 2 - both long and short
+        self.tp_percent = tp_percent # Take Profit
+        self.sl_percent = sl_percent # Stop Loss
         self.interval = interval
         self.serial_number = 1
 
@@ -207,6 +208,13 @@ class CheckAndExecuteTrade(BybitConnector):
             high_price = market_data['High']
             cur_date_time_in_mills = start_date_time_in_mills
             while cur_date_time_in_mills < end_date_time_in_mills:
+                cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
+                cur_min = self.millis_to_date(cur_date_time_in_mills).minute
+                cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+                if cur_time_millis > self.end_time_millis:
+                    cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                        cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                 timedelta(days=1))
                 cur_market_data = self.get_market_data(
                     cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
                 )
@@ -217,11 +225,11 @@ class CheckAndExecuteTrade(BybitConnector):
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Short"
-                    data["IB_H"] = float(cur_market_data['High'])
+                    data["IB_H"] = cur_market_data['High']
                     data["IB_L"] = float(cur_market_data['Low'])
                     data["IB%"] = np.round(
                         (
-                                (float(cur_market_data['High']) - float(cur_market_data['Low'])
+                                (cur_market_data['High'] - float(cur_market_data['Low'])
                                  ) / float(cur_market_data['Low'])) * 100, 2
                     )
                     data['Volume'] = float(cur_market_data['Volume'])
@@ -265,6 +273,13 @@ class CheckAndExecuteTrade(BybitConnector):
             low_price = market_data['Low']
             cur_date_time_in_mills = start_date_time_in_mills
             while cur_date_time_in_mills < end_date_time_in_mills:
+                cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
+                cur_min = self.millis_to_date(cur_date_time_in_mills).minute
+                cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+                if cur_time_millis > self.end_time_millis:
+                    cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                        cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                 timedelta(days=1))
                 cur_market_data = self.get_market_data(
                     cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
                 )
@@ -275,11 +290,11 @@ class CheckAndExecuteTrade(BybitConnector):
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Long"
-                    data["IB_H"] = float(cur_market_data['High'])
+                    data["IB_H"] = cur_market_data['High']
                     data["IB_L"] = float(cur_market_data['Low'])
                     data["IB%"] = np.round(
                         (
-                                (float(cur_market_data['High']) - float(cur_market_data['Low'])
+                                (cur_market_data['High'] - float(cur_market_data['Low'])
                                  ) / float(cur_market_data['Low'])) * 100, 2
                     )
                     data['Volume'] = float(cur_market_data['Volume'])

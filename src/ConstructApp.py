@@ -148,29 +148,30 @@ class InitializeApp:
             st.warning('⚠ Not connected to internet, Please connect to 🌐internet and 🔄refresh')
         with st.form('form_1'):
             st.header('Search for Short or Long trade')
-            st.caption(str(dt.now().strftime('%d/%b/%Y %H:%M:%S.%f %p')))
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 start_date = st.date_input(
                     'Start Date', value='today', min_value=dt(2000, 1, 1), max_value=dt.now()
                 )
-                start_hour = st.slider('Start hour', value=5, min_value=1, max_value=12)
-                start_min = st.slider('Start min', value=30, min_value=0, max_value=60, step=5)
+                start_hour = st.slider('Start hour', value=5, min_value=0, max_value=23)
+                start_min = st.slider('Start min', value=30, min_value=0, max_value=55, step=5)
+                start_datetime = dt(start_date.year, start_date.month, start_date.day, start_hour, start_min)
             with col2:
                 end_date = st.date_input(
                     'End Date', value='today', min_value=dt(2000, 1, 1), max_value=dt.now()
                 )
-                end_hour = st.slider('End hour', value=5, min_value=1, max_value=12)
-                end_min = st.slider('End min', value=30, min_value=0, max_value=60, step=5)
+                end_hour = st.slider('End hour', value=9, min_value=0, max_value=23)
+                end_min = st.slider('End min', value=30, min_value=0, max_value=55, step=5)
+                end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
             with col3:
-                selection = st.selectbox('Select trade type', ['Short', 'Long', 'Both'])
+                selection = st.selectbox('Select trade type', ['Both', 'Short', 'Long'])
                 interval = st.selectbox('Interval', self.bybit_intervals)
 
+            st.caption(str(dt.now().strftime('%d/%b/%Y %H:%M:%S.%f %p')))
             if st.form_submit_button('Start', on_click=self.start_loop()):
                 try:
                     check_internet()
-                    start_datetime = dt(start_date.year, start_date.month, start_date.day, start_hour, start_min)
-                    end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
                     if start_datetime < end_datetime:
                         initiate_trade = InitiateBybitTrade(start_datetime, end_datetime, interval)
                         if selection == 'Short':
