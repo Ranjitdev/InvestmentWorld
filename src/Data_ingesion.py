@@ -11,8 +11,8 @@ from dataclasses import dataclass
 @dataclass
 class DataIngesionConfig:
     data_url = r'https://www.nseindia.com/regulations/listing-compliance/nse-market-capitalisation-all-companies'
-    data_path = r'artifacts/data.xlsx'
-    notebook_data_path = r'notebook/data.xlsx'
+    data_path = r'artifacts/tickers.xlsx'
+    notebook_data_path = r'notebook/tickers.xlsx'
     bybit_test_data = r'artifacts/bybit_data.csv'
 
 
@@ -22,10 +22,10 @@ class DataIngesion:
         files = []
         for file in os.listdir('artifacts/'):
             files.append(file)
-        if 'data.xlsx' not in files:
+        if 'tickers.xlsx' not in files:
             raise Exception('data error')
 
-    def get_data(self, market_cap=True, symbol=True) -> pd.DataFrame:
+    def get_tickers_data(self, market_cap=True, symbol=True) -> pd.DataFrame:
         try:
             data = pd.read_excel(self.config.data_path, index_col=None)
             if not market_cap and not symbol:
@@ -46,13 +46,12 @@ class DataIngesion:
             logging.error(e)
             raise CustomException(e, sys)
 
-    def get_bybit_data(self) -> pd.DataFrame:
+    def get_bybit_data(self) -> pd.DataFrame or None:
         try:
             data = pd.read_csv(self.config.bybit_test_data, index_col=False)
             return data
-        except Exception as e:
-            logging.error(e)
-            raise CustomException(e, sys)
+        except:
+            return None
 
     def update_bybit_data(self, file: pd.DataFrame) -> None:
         try:

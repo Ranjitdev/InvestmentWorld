@@ -17,10 +17,8 @@ from datetime import timedelta
 
 class InitializeApp:
     def __init__(self):
-        self.full_data = DataIngesion().get_data()
-        self.sym_data = DataIngesion().get_data(market_cap=False)
-        self.market_cap_data = DataIngesion().get_data(symbol=False)
-        self.bybit_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
+        self.full_tickers_data = DataIngesion().get_tickers_data()
+        self.sym_tickers_data = DataIngesion().get_tickers_data(market_cap=False)
 
     def home(self):
         try:
@@ -34,7 +32,7 @@ class InitializeApp:
         except:
             st.warning('⚠ Not connected to internet, Please connect to 🌐internet and 🔄refresh')
         try:
-            data = self.sym_data
+            data = self.sym_tickers_data
             col1, col2, col3 = st.columns(3)
             with col1:
                 name_selection = st.selectbox('Company', ['Select'] + list(data['Name']))
@@ -91,7 +89,7 @@ class InitializeApp:
                 end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
             with col3:
                 selection = st.selectbox('Select trade type', ['Both', 'Short', 'Long'])
-                interval = st.selectbox('Interval', self.bybit_intervals)
+                interval = st.selectbox('Interval', BybitConfig.bybit_intervals)
 
             if st.form_submit_button('Start Now'):
                 try:
@@ -122,12 +120,9 @@ class InitializeApp:
                     raise CustomException(e, sys)
             st.caption(f'{dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")}')
 
-        try:
+        if DataIngesion().get_bybit_data():
             st.caption(f'Old data from: {read_textdoc("bybit_datetime")}')
             st.dataframe(DataIngesion().get_bybit_data())
-        except Exception as e:
-            logging.error(e)
-            st.warning(f'⚠ Start searching for data: {e}')
 
 
 

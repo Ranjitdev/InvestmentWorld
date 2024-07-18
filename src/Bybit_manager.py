@@ -2,7 +2,7 @@ import time
 
 import numpy as np
 import pandas as pd
-
+from dataclasses import dataclass
 from src.logger import logging
 from src.exception import CustomException
 import os
@@ -18,6 +18,10 @@ import warnings
 warnings.filterwarnings('ignore')
 data_list = []
 
+
+@dataclass
+class BybitConfig:
+    bybit_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
 
 class BybitConnector:
     def __init__(self):
@@ -167,7 +171,7 @@ class BybitConnector:
 
 
 class CheckAndExecuteTrade(BybitConnector):
-    def __init__(self, start_datetime, end_datetime, interval, tp_percent=0.25, sl_percent=1.5):
+    def __init__(self, start_datetime, end_datetime, interval, tp_percent=0.25, sl_percent=0.5):
         super().__init__()
         self.start_datetime = start_datetime
         self.start_datetime_dic = self.get_datetime(start_datetime)
@@ -222,6 +226,7 @@ class CheckAndExecuteTrade(BybitConnector):
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Short"
+                    data['Interval'] = self.interval
                     data["IB_H"] = cur_market_data['High']
                     data["IB_L"] = cur_market_data['Low']
                     data["IB%"] = np.round(
@@ -287,6 +292,7 @@ class CheckAndExecuteTrade(BybitConnector):
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Long"
+                    data['Interval'] = self.interval
                     data["IB_H"] = cur_market_data['High']
                     data["IB_L"] = cur_market_data['Low']
                     data["IB%"] = np.round(
