@@ -46,10 +46,19 @@ class DataIngesion:
             logging.error(e)
             raise CustomException(e, sys)
 
-    def get_bybit_data(self):
+    def get_bybit_data(self) -> pd.DataFrame:
         try:
             data = pd.read_csv(self.config.bybit_test_data, index_col=False)
             return data
+        except Exception as e:
+            logging.error(e)
+            raise CustomException(e, sys)
+
+    def update_bybit_data(self, file: pd.DataFrame) -> None:
+        try:
+            data = pd.read_csv(self.config.bybit_test_data, index_col=False)
+            new_data = pd.concat([data, file], ignore_index=True)
+            new_data.to_csv(self.config.bybit_test_data, index=False)
         except Exception as e:
             logging.error(e)
             raise CustomException(e, sys)

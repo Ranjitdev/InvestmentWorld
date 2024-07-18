@@ -14,10 +14,8 @@ from datetime import timedelta
 from pybit.unified_trading import HTTP
 import streamlit as st
 import threading
-stop_event = threading.Event()
 import warnings
 warnings.filterwarnings('ignore')
-from pprint import pprint
 data_list = []
 
 
@@ -198,7 +196,6 @@ class CheckAndExecuteTrade(BybitConnector):
         """
         Short trade checks if previous high price is in between current high and current close and executes short trade
         """
-        global stop_event
         count = 0
         start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
         end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
@@ -218,22 +215,22 @@ class CheckAndExecuteTrade(BybitConnector):
                 cur_market_data = self.get_market_data(
                     cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
                 )
-                if market_data is not None:
+                if cur_market_data is not None:
                     data = {}
-                    data["Sl No"] = self.serial_number
+                    data["Check No"] = self.serial_number
                     data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Short"
                     data["IB_H"] = cur_market_data['High']
-                    data["IB_L"] = float(cur_market_data['Low'])
+                    data["IB_L"] = cur_market_data['Low']
                     data["IB%"] = np.round(
                         (
-                                (cur_market_data['High'] - float(cur_market_data['Low'])
-                                 ) / float(cur_market_data['Low'])) * 100, 2
+                                (cur_market_data['High'] - cur_market_data['Low']
+                                 ) / cur_market_data['Low']) * 100, 2
                     )
-                    data['Volume'] = float(cur_market_data['Volume'])
-                    data['Turnover'] = float(cur_market_data['Turnover'])
+                    data['Volume'] = cur_market_data['Volume']
+                    data['Turnover'] = cur_market_data['Turnover']
                     print(f'Checking for short trade, count {count}, '
                           f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
 
@@ -247,15 +244,16 @@ class CheckAndExecuteTrade(BybitConnector):
                               cur_market_data["Close"], "Executed at ",
                               (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
                         short_data = self.execute_short_trade(cur_market_data['Close'], cur_date_time_in_mills)
-                        short_data["Entry Price"] = float(cur_market_data['Close'])
-                        short_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
-                        data.update(short_data)
-                        data_list.append(data)
-                        cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                  timedelta(days=1))
+                        if short_data is not None:
+                            short_data["Entry Price"] = cur_market_data['Close']
+                            short_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
+                            data.update(short_data)
+                            data_list.append(data)
+                            cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                                cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                      timedelta(days=1))
 
-                    cur_date_time_in_mills += self._one_minute_value_in_ms
+                    cur_date_time_in_mills += (self._one_minute_value_in_ms * self.interval)
                     self.serial_number += 1
                     count += 1
 
@@ -263,7 +261,6 @@ class CheckAndExecuteTrade(BybitConnector):
         """
         Long trade checks if previous low price is in between current close and current low and executes long trade
         """
-        global stop_event
         count = 0
         start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
         end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
@@ -283,22 +280,22 @@ class CheckAndExecuteTrade(BybitConnector):
                 cur_market_data = self.get_market_data(
                     cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
                 )
-                if market_data is not None:
+                if cur_market_data is not None:
                     data = {}
-                    data["Sl No"] = self.serial_number
+                    data["Count No"] = self.serial_number
                     data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
                         '%d/%b/%Y')
                     data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
                     data["Trade Type"] = "Long"
                     data["IB_H"] = cur_market_data['High']
-                    data["IB_L"] = float(cur_market_data['Low'])
+                    data["IB_L"] = cur_market_data['Low']
                     data["IB%"] = np.round(
                         (
-                                (cur_market_data['High'] - float(cur_market_data['Low'])
-                                 ) / float(cur_market_data['Low'])) * 100, 2
+                                (cur_market_data['High'] - cur_market_data['Low']
+                                 ) / cur_market_data['Low']) * 100, 2
                     )
-                    data['Volume'] = float(cur_market_data['Volume'])
-                    data['Turnover'] = float(cur_market_data['Turnover'])
+                    data['Volume'] = cur_market_data['Volume']
+                    data['Turnover'] = cur_market_data['Turnover']
                     print(f'Checking for long trade, count {count}, '
                           f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
 
@@ -312,20 +309,21 @@ class CheckAndExecuteTrade(BybitConnector):
                         print("Condition for a Long Trade Have been Found Executing Long Trade - Entry Price: ",
                               cur_market_data["Close"], "Executed at Time ",
                               (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
-                        short_data = self.execute_long_trade(cur_market_data['Close'], cur_date_time_in_mills)
-                        data["Entry Price"] = float(cur_market_data['Close'])
-                        data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
-                        data.update(short_data)
-                        data_list.append(data)
-                        cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                                     timedelta(days=1))
+                        long_data = self.execute_long_trade(cur_market_data['Close'], cur_date_time_in_mills)
+                        if long_data is not None:
+                            long_data["Entry Price"] = cur_market_data['Close']
+                            long_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
+                            data.update(long_data)
+                            data_list.append(data)
+                            cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                                cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                         timedelta(days=1))
 
-                    cur_date_time_in_mills += self._one_minute_value_in_ms
+                    cur_date_time_in_mills += (self._one_minute_value_in_ms * self.interval)
                     self.serial_number += 1
                     count += 1
 
-    def execute_short_trade(self, entry_price, start_date_time_in_mils) -> Dict:
+    def execute_short_trade(self, entry_price, start_date_time_in_mils) -> Dict or None:
         """
         Win situation:-
         While current low price less than (entry price - entry price * take profit percentage)
@@ -341,6 +339,11 @@ class CheckAndExecuteTrade(BybitConnector):
         count = 1
         candel_start_date_time_in_ms = start_date_time_in_mils
         while True:
+            cur_hour = self.millis_to_date(candel_start_date_time_in_ms).hour
+            cur_min = self.millis_to_date(candel_start_date_time_in_ms).minute
+            cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+            if cur_time_millis > self.end_time_millis:
+                return None
             market_data = self.get_market_data(
                 candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
             )
@@ -351,7 +354,7 @@ class CheckAndExecuteTrade(BybitConnector):
                     short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
                     short_data["TP Time"] = str(market_data['Start Time'])
                     short_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
-                    short_data["SL Time"] = None
+                    short_data["SL Time"] = " "
                     short_data["Win Loss No Trade"] = 1
                     short_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
                     return short_data
@@ -360,7 +363,7 @@ class CheckAndExecuteTrade(BybitConnector):
                     print("Loosing  Short Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
 
                     short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
-                    short_data["TP Time"] = None
+                    short_data["TP Time"] = " "
                     short_data["SL Price"] = str(market_data['Close'])
                     short_data["SL Time"] = str(market_data['Start Time'])
                     short_data["Win Loss No Trade"] = 0
@@ -387,17 +390,8 @@ class CheckAndExecuteTrade(BybitConnector):
                     print(f'Retrying to execute, Count {count}',
                           f'{self.millis_to_date(candel_start_date_time_in_ms, ret_type="str")}')
                     count += 1
-                    if (self.millis_to_date(candel_start_date_time_in_ms).day <
-                            self.millis_to_date(start_date_time_in_mils).day):
-                        short_data["SL Price"] = None
-                        short_data["SL Time"] = None
-                        short_data["TP Price"] = None
-                        short_data["TP Time"] = None
-                        short_data["Total % Gain"] = None
-                        short_data["Win Loss No Trade"] = None
-                        return short_data
 
-    def execute_long_trade(self, entry_price, start_date_time_in_mils) -> Dict:
+    def execute_long_trade(self, entry_price, start_date_time_in_mils) -> Dict or None:
         """
         Win situation:-
         While current high greater than (entry price - entry price * take profit percentage)
@@ -414,6 +408,11 @@ class CheckAndExecuteTrade(BybitConnector):
         count = 1
         candel_start_date_time_in_ms = start_date_time_in_mils
         while True:
+            cur_hour = self.millis_to_date(candel_start_date_time_in_ms).hour
+            cur_min = self.millis_to_date(candel_start_date_time_in_ms).minute
+            cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+            if cur_time_millis > self.end_time_millis:
+                return None
             market_data = self.get_market_data(
                 candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
             )
@@ -423,14 +422,14 @@ class CheckAndExecuteTrade(BybitConnector):
                     long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
                     long_data["TP Time"] = str(market_data['Start Time'])
                     long_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
-                    long_data["SL Time"] = None
+                    long_data["SL Time"] = " "
                     long_data["Win Loss No Trade"] = 1
                     long_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
                     return long_data
                 if market_data['Low'] < (float(entry_price) + (float(entry_price) * self.sl_percent)):
                     print("Loosing  long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
                     long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
-                    long_data["TP Time"] = None
+                    long_data["TP Time"] = " "
                     long_data["SL Price"] = str(market_data['Close'])
                     long_data["SL Time"] = str(market_data['Start Time'])
                     long_data["Win Loss No Trade"] = 0
@@ -456,15 +455,6 @@ class CheckAndExecuteTrade(BybitConnector):
                     print(f'Retrying to execute, Count {count}',
                           f'{self.millis_to_date(candel_start_date_time_in_ms, ret_type="str")}')
                     count += 1
-                    if (self.millis_to_date(candel_start_date_time_in_ms).day <
-                            self.millis_to_date(start_date_time_in_mils).day):
-                        long_data["SL Price"] = None
-                        long_data["SL Time"] = None
-                        long_data["TP Price"] = None
-                        long_data["TP Time"] = None
-                        long_data["Total % Gain"] = None
-                        long_data["Win Loss No Trade"] = None
-                        return long_data
 
 class InitiateBybitTrade(CheckAndExecuteTrade):
     def __init__(self, *args, **kwargs):

@@ -1,5 +1,6 @@
 from src.logger import logging
 from src.exception import CustomException
+from src.YahooFianance import *
 import os
 import sys
 import pandas as pd
@@ -9,9 +10,6 @@ from dataclasses import dataclass
 from src.Data_ingesion import *
 from src.Bybit_manager import *
 import streamlit as st
-from streamlit.errors import NoSessionContext
-from streamlit.runtime.scriptrunner.script_run_context import (SCRIPT_RUN_CONTEXT_ATTR_NAME, get_script_run_ctx)
-from streamlit.runtime.scriptrunner import add_script_run_ctx
 from src.utils import *
 import time
 from datetime import timedelta
@@ -24,122 +22,49 @@ class InitializeApp:
         self.market_cap_data = DataIngesion().get_data(symbol=False)
         self.bybit_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
 
-    @staticmethod
-    def start_loop():
-        st.session_state.loop_running = True
-
-    @staticmethod
-    def stop_loop():
-        st.session_state.loop_running = False
-
     def home(self):
         try:
             pass
         except Exception as e:
             st.warning(f'Processing Error: {e}', icon='⚠')
 
-    def today(self):
+    def nse(self):
         try:
-            data = self.sym_data
-            col1, col2 = st.columns(2)
-            with col1:
-                name_selection = st.selectbox('Stock', ['Select'] + list(data['Name']))
-            with col2:
-                interval = st.selectbox('Interval', ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'])
-            if name_selection != 'Select':
-                ticker_sym = str(data[data['Name'] == name_selection]['Symbol'].item()) + '.NS'
-                while True:
-                    data = GetStockDataYfinance(symbol=ticker_sym, period='1d', interval=interval).get_data()
-                    placeholder = st.empty()
-                    with placeholder.container():
-                        open_col, high_col, low_col, close_col, vol_col = st.columns(5)
-                        with open_col:
-                            st.caption('Open')
-                            st.subheader(np.round(data.iloc[0, 0], 2))
-                        with high_col:
-                            st.caption('High')
-                            st.subheader(np.round(data.iloc[0, 1], 2))
-                        with low_col:
-                            st.caption('Low')
-                            st.subheader(np.round(data.iloc[0, 2], 2))
-                        with close_col:
-                            st.caption('Close')
-                            st.subheader(np.round(data.iloc[0, 3], 2))
-                        with vol_col:
-                            st.caption('Volume')
-                            st.subheader(np.round(data.iloc[0, 4], 2))
-                        st.dataframe(data)
-                        time.sleep(5)
-                    placeholder.empty()
-
-            else:
-                pass
-        except Exception as e:
-            logging.error(f'Processing Error: {e}')
-            st.warning(f'Processing Error: {e}', icon='⚠')
-
-    def historical(self):
+            check_internet()
+        except:
+            st.warning('⚠ Not connected to internet, Please connect to 🌐internet and 🔄refresh')
         try:
             data = self.sym_data
             col1, col2, col3 = st.columns(3)
             with col1:
                 name_selection = st.selectbox('Company', ['Select'] + list(data['Name']))
             with col2:
-                interval = st.selectbox('Interval', UtilityConfigure.valid_intervals)
+                interval = st.selectbox('Interval', YfinanceConfigure.valid_intervals)
             with col3:
-                period = st.selectbox('Period', UtilityConfigure.valid_periods)
-            col4, col5 = st.columns(2)
+                period = st.selectbox('Period', YfinanceConfigure.valid_periods)
+            col4, col5, col6 = st.columns(3)
             with col4:
                 start = st.date_input('Start Date', None, min_value=dt(1970, 1, 1), max_value=dt.now())
             with col5:
                 end = st.date_input('End Date', None, min_value=dt(2000, 1, 1), max_value=dt.now())
             if name_selection != 'Select':
+                check_internet()
                 ticker_sym = str(data[data['Name'] == name_selection]['Symbol'].item()) + '.NS'
-                data = GetStockDataYfinance(symbol=ticker_sym, interval=interval, period=period, start=start, end=end
-                                            ).get_data()
-                st.dataframe(data)
-        except Exception as e:
-            logging.error(f'Processing Error: {e}')
-            st.warning(f'Processing Error: {e}', icon='⚠')
-
-    def bitcoin(self):
-        valid_periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
-        valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1d', '5d', '1wk', '1mo', '3mo']
-        try:
-            col1, col2 = st.columns(2)
-            with col1:
-                period = st.selectbox('Period', valid_periods)
-            with col2:
-                interval = st.selectbox('Interval', valid_intervals)
-
-            while True:
-                data = GetStockDataYfinance(symbol='BTC-USD', interval=interval, period=period).get_data()
-                placeholder = st.empty()
-                with placeholder.container():
-                    open_col, high_col, low_col, close_col, vol_col = st.columns(5)
-                    with open_col:
-                        st.caption('Open')
-                        st.subheader(np.round(data.iloc[0, 0], 2))
-                    with high_col:
-                        st.caption('High')
-                        st.subheader(np.round(data.iloc[0, 1], 2))
-                    with low_col:
-                        st.caption('Low')
-                        st.subheader(np.round(data.iloc[0, 2], 2))
-                    with close_col:
-                        st.caption('Close')
-                        st.subheader(np.round(data.iloc[0, 3], 2))
-                    with vol_col:
-                        st.caption('Volume')
-                        st.subheader(np.round(data.iloc[0, 4], 2))
-
+                data = YfinanceData(ticker_sym, interval, period, start, end).get_data()
+                info = YfinanceData(ticker_sym, interval, period, start, end).stock_info()
+                tab1, tab2, tab3 = st.tabs(['Excel Data', 'Graphs', 'Company Info'])
+                with tab1:
                     st.dataframe(data)
-                    time.sleep(5)
-
-                placeholder.empty()
+                with tab2:
+                    st.caption('OHLC')
+                    st.line_chart(data[['Open', 'High', 'Low', 'Close']])
+                    st.caption('Volume')
+                    st.bar_chart(data['Volume'])
+                with tab3:
+                    st.write(info)
         except Exception as e:
-            logging.error(f'Processing Error: {e}')
             st.warning(f'Processing Error: {e}', icon='⚠')
+            raise CustomException(e, sys)
 
     def bybit(self):
         try:
@@ -168,24 +93,26 @@ class InitializeApp:
                 selection = st.selectbox('Select trade type', ['Both', 'Short', 'Long'])
                 interval = st.selectbox('Interval', self.bybit_intervals)
 
-            st.caption(str(dt.now().strftime('%d/%b/%Y %H:%M:%S.%f %p')))
-            if st.form_submit_button('Start', on_click=self.start_loop()):
+            if st.form_submit_button('Start Now'):
                 try:
                     check_internet()
                     if start_datetime < end_datetime:
                         initiate_trade = InitiateBybitTrade(start_datetime, end_datetime, interval)
+                        make_textdoc('bybit_datetime', str(dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")))
                         if selection == 'Short':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
+                                DataIngesion().update_bybit_data(data)
                             st.dataframe(data)
                         if selection == 'Long':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
+                                DataIngesion().update_bybit_data(data)
                             st.dataframe(data)
                         if selection == 'Both':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
-                                data.to_csv(DataIngesionConfig.bybit_test_data, index=False)
+                                DataIngesion().update_bybit_data(data)
                             st.dataframe(data)
                     else:
                         st.warning('Check Start date and End date')
@@ -193,12 +120,14 @@ class InitializeApp:
                     logging.error(e)
                     st.error(f'⚠ Got Error {e}')
                     raise CustomException(e, sys)
+            st.caption(f'{dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")}')
 
-    def file_viewer(self):
         try:
-            pass
+            st.caption(f'Old data from: {read_textdoc("bybit_datetime")}')
+            st.dataframe(DataIngesion().get_bybit_data())
         except Exception as e:
-            st.warning(f'Processing Error: {e}', icon='⚠')
+            logging.error(e)
+            st.warning(f'⚠ Start searching for data: {e}')
 
 
 
