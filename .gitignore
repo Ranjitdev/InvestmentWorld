@@ -8,8 +8,6 @@ __pycache__/
 Investment_World.egg-info/
 *.idea
 .idea/
-artifacts/creditcarddefault-396210-13114272d388.json
-
 # C extensions
 *.so
 
