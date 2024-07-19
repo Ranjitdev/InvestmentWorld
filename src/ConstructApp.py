@@ -101,16 +101,20 @@ class InitializeApp:
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
                                 DataIngesion().update_bybit_data(data)
+                                DataIngesion().update_gsheet(data)
                             st.dataframe(data)
                         if selection == 'Long':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
                                 DataIngesion().update_bybit_data(data)
+                                DataIngesion().update_gsheet(data)
                             st.dataframe(data)
                         if selection == 'Both':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
                                 DataIngesion().update_bybit_data(data)
+                                # DataIngesion().update_gsheet(data)
+                                # data.to_csv(DataIngesionConfig.bybit_test_data, index=False)
                             st.dataframe(data)
                     else:
                         st.warning('Check Start date and End date')
@@ -120,7 +124,7 @@ class InitializeApp:
                     raise CustomException(e, sys)
             st.caption(f'{dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")}')
 
-        if DataIngesion().get_bybit_data():
+        if type(DataIngesion().get_bybit_data()) is not None:
             st.caption(f'Old data from: {read_textdoc("bybit_datetime")}')
             st.dataframe(DataIngesion().get_bybit_data())
 

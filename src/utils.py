@@ -10,6 +10,11 @@ from src.Data_ingesion import *
 import requests
 
 
+@dataclass
+class UtilityConfigure:
+    pass
+
+
 def check_internet(url='https://www.google.com', timeout=5) -> None:
     """
     Simple check to see if an internet connection seems present
@@ -52,4 +57,6 @@ def read_textdoc(name: str) -> str:
     except Exception as e:
         logging.info(f'Connection error {e}')
         raise CustomException(e, sys)
+
+
 

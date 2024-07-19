@@ -357,23 +357,29 @@ class CheckAndExecuteTrade(BybitConnector):
                 if market_data['Low'] < (float(entry_price) - (float(entry_price) * self.tp_percent)):
                     print("Winning Short Trade Day at " + str((dt.fromtimestamp(candel_start_date_time_in_ms / 1000))))
 
-                    short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
+                    short_data["TP Price"] = float(float(entry_price) + (float(entry_price) * self.tp_percent))
                     short_data["TP Time"] = str(market_data['Start Time'])
-                    short_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
+                    short_data["SL Price"] = float(float(entry_price) - (float(entry_price) * self.sl_percent))
                     short_data["SL Time"] = " "
                     short_data["Win Loss No Trade"] = 1
-                    short_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
+                    short_data['Take Profit %'] = self.tp_percent
+                    short_data['Stop Loss %'] = self.sl_percent
+                    short_data["Total % Gain"] = np.round(
+                        (((market_data['Low'] - entry_price) / entry_price) * 100) * 10, 2)
                     return short_data
                 if market_data['High'] > (
                         float(entry_price) + (float(entry_price) * self.sl_percent)):
                     print("Loosing  Short Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
 
-                    short_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
+                    short_data["TP Price"] = float(float(entry_price) + (float(entry_price) * self.tp_percent))
                     short_data["TP Time"] = " "
-                    short_data["SL Price"] = str(market_data['Close'])
+                    short_data["SL Price"] = float(market_data['Close'])
                     short_data["SL Time"] = str(market_data['Start Time'])
                     short_data["Win Loss No Trade"] = 0
-                    short_data["Total % Gain"] = str((((entry_price - market_data['High']) / entry_price) * 100) * 10)
+                    short_data['Take Profit %'] = self.tp_percent
+                    short_data['Stop Loss %'] = self.sl_percent
+                    short_data["Total % Gain"] = np.round(
+                        (((entry_price - market_data['High']) / entry_price) * 100) * 10, 2)
                     return short_data
 
                 candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
@@ -384,13 +390,17 @@ class CheckAndExecuteTrade(BybitConnector):
                           str(market_data['Close']))
 
                     if market_data['Close'] < entry_price:
-                        short_data["TP Price"] = str(market_data['Close'])
+                        short_data["TP Price"] = float(market_data['Close'])
                         short_data["TP Time"] = str(market_data['Start Time'])
                         short_data["Win Loss No Trade"] = 1
+                        short_data['Take Profit %'] = self.tp_percent
+                        short_data['Stop Loss %'] = self.sl_percent
                     else:
-                        short_data["SL Price"] = str((float(entry_price) + (float(entry_price) * self.sl_percent)))
+                        short_data["SL Price"] = float((float(entry_price) + (float(entry_price) * self.sl_percent)))
                         short_data["SL Time"] = str(dt.fromtimestamp(candel_start_date_time_in_ms / 1000))
                         short_data["Win Loss No Trade"] = 0
+                        short_data['Take Profit %'] = self.tp_percent
+                        short_data['Stop Loss %'] = self.sl_percent
                     return short_data
                 else:
                     print(f'Retrying to execute, Count {count}',
@@ -425,21 +435,27 @@ class CheckAndExecuteTrade(BybitConnector):
             if market_data is not None:
                 if market_data['High'] > (float(entry_price) - (float(entry_price) * self.tp_percent)):
                     print("Winning Long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
+                    long_data["TP Price"] = float(float(entry_price) + (float(entry_price) * self.tp_percent))
                     long_data["TP Time"] = str(market_data['Start Time'])
-                    long_data["SL Price"] = str(float(entry_price) - (float(entry_price) * self.sl_percent))
+                    long_data["SL Price"] = float(float(entry_price) - (float(entry_price) * self.sl_percent))
                     long_data["SL Time"] = " "
                     long_data["Win Loss No Trade"] = 1
-                    long_data["Total % Gain"] = str((((market_data['Low'] - entry_price) / entry_price) * 100) * 10)
+                    long_data['Take Profit %'] = self.tp_percent
+                    long_data['Stop Loss %'] = self.sl_percent
+                    long_data["Total % Gain"] = np.round(
+                        (((market_data['Low'] - entry_price) / entry_price) * 100) * 10, 2)
                     return long_data
                 if market_data['Low'] < (float(entry_price) + (float(entry_price) * self.sl_percent)):
                     print("Loosing  long Trade Day at ", str((dt.fromtimestamp(start_date_time_in_mils / 1000))))
-                    long_data["TP Price"] = str(float(entry_price) + (float(entry_price) * self.tp_percent))
+                    long_data["TP Price"] = float(float(entry_price) + (float(entry_price) * self.tp_percent))
                     long_data["TP Time"] = " "
-                    long_data["SL Price"] = str(market_data['Close'])
+                    long_data["SL Price"] = float(market_data['Close'])
                     long_data["SL Time"] = str(market_data['Start Time'])
                     long_data["Win Loss No Trade"] = 0
-                    long_data["Total % Gain"] = str((((entry_price - market_data['High']) / entry_price) * 100) * 10)
+                    long_data['Take Profit %'] = self.tp_percent
+                    long_data['Stop Loss %'] = self.sl_percent
+                    long_data["Total % Gain"] = np.round(
+                        (((entry_price - market_data['High']) / entry_price) * 100) * 10, 2)
                     return long_data
 
                 candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
@@ -448,14 +464,18 @@ class CheckAndExecuteTrade(BybitConnector):
                     print("Trade Never Reached TP and Next day has has arrived, Closing at: " +
                           str(market_data['Close']))
                     if market_data['Close'] < entry_price:
-                        long_data["TP Price"] = str(market_data['Close'])
+                        long_data["TP Price"] = float(market_data['Close'])
                         long_data["TP Time"] = str(market_data['Start Time'] / 1000)
                         long_data["Win Loss No Trade"] = 1
+                        long_data['Take Profit %'] = self.tp_percent
+                        long_data['Stop Loss %'] = self.sl_percent
                     else:
-                        long_data["SL Price"] = str((float(entry_price) + (float(entry_price) * self.sl_percent)))
+                        long_data["SL Price"] = float((float(entry_price) + (float(entry_price) * self.sl_percent)))
                         long_data["SL Time"] = str(dt.fromtimestamp(candel_start_date_time_in_ms / 1000))
                         long_data["Win Loss No Trade"] = 0
-                    break
+                        long_data['Take Profit %'] = self.tp_percent
+                        long_data['Stop Loss %'] = self.sl_percent
+                    return long_data
 
                 else:
                     print(f'Retrying to execute, Count {count}',

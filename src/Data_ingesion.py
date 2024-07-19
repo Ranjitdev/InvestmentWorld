@@ -6,6 +6,9 @@ import pandas as pd
 import numpy as np
 from typing import *
 from dataclasses import dataclass
+import gspread
+from gspread_dataframe import set_with_dataframe
+from oauth2client.service_account import ServiceAccountCredentials
 
 
 @dataclass
@@ -14,6 +17,10 @@ class DataIngesionConfig:
     data_path = r'artifacts/tickers.xlsx'
     notebook_data_path = r'notebook/tickers.xlsx'
     bybit_test_data = r'artifacts/bybit_data.csv'
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        'artifacts/creditcarddefault-396210-13114272d388.json', scope)
+    client = gspread.authorize(creds)
 
 
 class DataIngesion:
@@ -57,9 +64,22 @@ class DataIngesion:
         try:
             data = pd.read_csv(self.config.bybit_test_data, index_col=False)
             new_data = pd.concat([data, file], ignore_index=True)
-            new_data.to_csv(self.config.bybit_test_data, index=False)
+            new_data.iloc[::-1].reset_index(drop=True).to_csv(self.config.bybit_test_data, index=False)
         except Exception as e:
-            logging.error(e)
+            raise CustomException(e, sys)
+
+    def update_gsheet(self, data):
+        try:
+            spreadsheet = DataIngesionConfig.client.open('bybit_data')
+            worksheet = spreadsheet.get_worksheet(0)
+            previous_data = worksheet.get_all_records()
+            previous_data = pd.DataFrame(previous_data)
+            print(previous_data)
+            new_data = pd.concat([data, previous_data], ignore_index=True)
+            new_data = new_data.iloc[::-1].reset_index(drop=True)
+            worksheet.clear()
+            set_with_dataframe(worksheet, new_data)
+        except Exception as e:
             raise CustomException(e, sys)
 
 
