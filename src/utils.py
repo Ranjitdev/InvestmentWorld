@@ -6,13 +6,12 @@ import pandas as pd
 import numpy as np
 from typing import *
 from dataclasses import dataclass
-from src.Data_ingesion import *
 import requests
-
-
-@dataclass
-class UtilityConfigure:
-    pass
+import threading
+from datetime import datetime as dt
+from datetime import timedelta
+import warnings
+warnings.filterwarnings('ignore')
 
 
 def check_internet(url='https://www.google.com', timeout=5) -> None:

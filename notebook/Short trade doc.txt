@@ -1,0 +1,31 @@
+Short trade checks if previous high price is in between current high and current close and executes short trade
+
+Win situation:-
+While current low price less than (entry price - (entry price * take profit percentage))
+
+Loss situation:-
+While current high price greater than (entry price + (entry price * stop loss percentage))
+
+No trade situation:-
+if current time greater than end time
+if current close price less than entry price it is win else it is loss
+
+
+Check short trade:
+    while current time in between start date time and end date time continue the checking
+        Take 30 min candle data in ib_high
+        Add 30 min to Start date time
+        Take current time in cur_time_millis
+        Start checking the market data till End time with interval 1min
+            if current time goes above end time
+                Current time will increase to next day start time
+            if (Currnt high is greater than ib_high and ib_high is greater than current close)
+                Execute short trade:
+                    Current date time is current date and start time
+                    while current time not more than end time continue
+                        if (current low less than (entry price - (entry price * take profit percentage))
+                            Win short trade
+                        if (current high greater than (entry price + (entry price * stop loss percentage))
+                            Lossing short trade
+                        if current close price less than entry price it is win
+                        else it is loss

@@ -82,6 +82,12 @@ class DataIngesion:
         except Exception as e:
             raise CustomException(e, sys)
 
+    def update_mysql_server(self, db: dict, data: pd.DataFrame) -> None:
+        try:
+            pass
+        except Exception as e:
+            raise CustomException(e, sys)
+
 
 
 

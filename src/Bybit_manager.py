@@ -1,27 +1,13 @@
-import time
-
-import numpy as np
-import pandas as pd
-from dataclasses import dataclass
-from src.logger import logging
-from src.exception import CustomException
-import os
-import sys
-import os
 from src.utils import *
-from datetime import datetime as dt
-from datetime import timedelta
+from src.Data_ingesion import *
 from pybit.unified_trading import HTTP
-import streamlit as st
-import threading
-import warnings
-warnings.filterwarnings('ignore')
 data_list = []
 
 
 @dataclass
 class BybitConfig:
     bybit_intervals = [1, 3, 5, 15, 30, 60, 120, 240, 360, 720, 'D', 'M', 'W']
+
 
 class BybitConnector:
     def __init__(self):
@@ -53,7 +39,6 @@ class BybitConnector:
                 millis = int(date_obj * 1000)
                 return millis
         except Exception as e:
-            logging.error('date to millis error ', str(e))
             raise CustomException(e, sys)
 
     @staticmethod
@@ -72,7 +57,6 @@ class BybitConnector:
             elif ret_type == 'datetime':
                 return date
         except Exception as e:
-            logging.error('millis to date error ', str(e))
             raise CustomException(e, sys)
 
     @staticmethod
@@ -115,7 +99,7 @@ class BybitConnector:
                 return None
 
     def get_open_interest(
-            self, start_date_time_in_mils, category="inverse", symbol="BTCUSD", interval_time="30min"
+            self, start_date_time_in_mils, category="inverse", symbol="BTCUSD", interval_time='30min'
     ) -> float or None:
         """
         Gets open interest from bybit
@@ -131,10 +115,9 @@ class BybitConnector:
                 endTime=start_date_time_in_mils + 1740000,
             )
             oi = float(open_interest_data['result']['list'][0]['openInterest'])
-            logging.info(f'Open interest {oi}')
             return oi
         except Exception as e:
-            logging.debug(f'Open interest not found {e}')
+            logging.warning(f'Open interest not found {e}')
             return None
 
     def get_market_data(self, start_date_time_in_mils, end_date_time_in_mils, category="inverse",
@@ -166,12 +149,12 @@ class BybitConnector:
                 })
             return df_list[-1]
         except Exception as e:
-            logging.debug(f'Data not found {e}')
+            logging.warning(f'Data not found {e}')
             return None
 
 
 class CheckAndExecuteTrade(BybitConnector):
-    def __init__(self, start_datetime, end_datetime, interval, tp_percent=0.25, sl_percent=0.5):
+    def __init__(self, start_datetime, end_datetime, tp_percent=0.25, sl_percent=0.5):
         super().__init__()
         self.start_datetime = start_datetime
         self.start_datetime_dic = self.get_datetime(start_datetime)
@@ -189,11 +172,9 @@ class CheckAndExecuteTrade(BybitConnector):
         self.end_hour = self.end_datetime_dic['hour']
         self.end_min = self.end_datetime_dic['minute']
         self.end_time_millis = (self.end_hour * 60 * 60000) + (self.end_min * 60000)
-        self.ib_high = 0  # Initial Balance high
-        self.ib_low = 0  # Initial Balance low
         self.tp_percent = tp_percent # Take Profit
         self.sl_percent = sl_percent # Stop Loss
-        self.interval = interval
+        self.interval = 1
         self.serial_number = 1
 
     def check_short_trade(self) -> None:
@@ -203,129 +184,160 @@ class CheckAndExecuteTrade(BybitConnector):
         count = 0
         start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
         end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
+        # Taking start date time in current
+        pre_date_time_in_mills = start_date_time_in_mills
+        while pre_date_time_in_mills < end_date_time_in_mills:
+            market_data = self.get_market_data(pre_date_time_in_mills, pre_date_time_in_mills, interval=30)
+            if market_data is not None:
+                ib_high = market_data['High']
+                ib_low = market_data['Low']
+                data = {
+                    'Year': self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['year'],
+                    'month': self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['month'],
+                    "Day": self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['day'],
+                    "Week Day": self.millis_to_date(pre_date_time_in_mills, ret_type='datetime').strftime("%a"),
+                    'Start Time': str(str(self.start_hour) + ' : ' + str(self.start_min)),
+                    'End Time': str(str(self.end_hour) + ' : ' + str(self.end_min)),
+                    "Trade Type": "Short",
+                    'Initial High': ib_high,
+                    'Initial Low': ib_low,
+                    "Initial Balance %": np.round(((ib_high - market_data['Low']) / market_data['Low']) * 100, 2),
+                    'Initial Volume': market_data['Volume'],
+                    'Initial Turnover': market_data['Turnover']
+                }
 
-        market_data = self.get_market_data(start_date_time_in_mills, start_date_time_in_mills, interval=self.interval)
-        if market_data is not None:
-            high_price = market_data['High']
-            cur_date_time_in_mills = start_date_time_in_mills
-            while cur_date_time_in_mills < end_date_time_in_mills:
-                cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
-                cur_min = self.millis_to_date(cur_date_time_in_mills).minute
-                cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
-                if cur_time_millis > self.end_time_millis:
-                    cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                        cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                                 timedelta(days=1))
-                cur_market_data = self.get_market_data(
-                    cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
-                )
-                if cur_market_data is not None:
-                    data = {}
-                    data["Check No"] = self.serial_number
-                    data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
-                        '%d/%b/%Y')
-                    data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
-                    data["Trade Type"] = "Short"
-                    data['Interval'] = self.interval
-                    data["IB_H"] = cur_market_data['High']
-                    data["IB_L"] = cur_market_data['Low']
-                    data["IB%"] = np.round(
-                        (
-                                (cur_market_data['High'] - cur_market_data['Low']
-                                 ) / cur_market_data['Low']) * 100, 2
-                    )
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    print(f'Checking for short trade, count {count}, '
-                          f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
+                # Taking current date time for increasing with one minute
+                pre_date_time_in_mills += (30 * self._one_minute_value_in_ms)
+                cur_date_time_in_mills = pre_date_time_in_mills
+                while True:
+                    # If current time goes above end time it will increase to next day start time
+                    cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
+                    cur_min = self.millis_to_date(cur_date_time_in_mills).minute
+                    cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+                    if cur_time_millis > self.end_time_millis:
+                        pre_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                     timedelta(days=1))
+                        break
 
-                    oi = self.get_open_interest(cur_date_time_in_mills)
-                    if oi:
-                        data['Open Interest'] = oi
-                        print(f'Open Interest {oi}')
+                    cur_market_data = self.get_market_data(
+                        cur_date_time_in_mills, cur_date_time_in_mills, interval=1)
+                    if cur_market_data is not None:
+                        data["High"] = cur_market_data['High']
+                        data["Low"] = cur_market_data['Low']
+                        data["High to Low %"] = np.round(
+                            (
+                                    (cur_market_data['High'] - cur_market_data['Low']
+                                     ) / cur_market_data['Low']) * 100, 2
+                        )
+                        data['Volume'] = cur_market_data['Volume']
+                        data['Turnover'] = cur_market_data['Turnover']
+                        print(f'Checking for short trade, count {count}, '
+                              f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
 
-                    if cur_market_data['High'] > high_price > cur_market_data['Close']:
-                        print("Condition for a short Trade Have been Found Executing Short Trade - Entry Price: ",
-                              cur_market_data["Close"], "Executed at ",
-                              (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
-                        short_data = self.execute_short_trade(cur_market_data['Close'], cur_date_time_in_mills)
-                        if short_data is not None:
-                            short_data["Entry Price"] = cur_market_data['Close']
-                            short_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
-                            data.update(short_data)
-                            data_list.append(data)
-                            cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                                cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                      timedelta(days=1))
+                        oi = self.get_open_interest(cur_date_time_in_mills)
+                        if oi:
+                            data['Open Interest'] = oi
+                            print(f'Open Interest {oi}')
 
-                    cur_date_time_in_mills += (self._one_minute_value_in_ms * self.interval)
+                        if cur_market_data['High'] > ib_high > cur_market_data['Close']:
+                            print("Condition for a short Trade Have been Found Executing Short Trade - Entry Price: ",
+                                  cur_market_data["Close"], "Executed at ",
+                                  (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
+                            short_data = self.execute_short_trade(cur_market_data['Close'], pre_date_time_in_mills)
+                            if short_data is not None:
+                                short_data["Entry Price"] = cur_market_data['Close']
+                                short_data["Entry Time"] = self.millis_to_date(
+                                    cur_date_time_in_mills).strftime('%H:%M:%S.%f %p')
+                                data.update(short_data)
+                                data_list.append(data)
+                                pre_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                                    cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                             timedelta(days=1))
+                                break
+                    cur_date_time_in_mills += self._one_minute_value_in_ms
                     self.serial_number += 1
                     count += 1
 
-    def check_for_long_trade(self) -> None:
+    def check_long_trade(self) -> None:
         """
-        Long trade checks if previous low price is in between current close and current low and executes long trade
+        long trade checks if previous high price is in between current close and current low and executes short trade
         """
         count = 0
         start_date_time_in_mills = self.date_to_millis(date_time=self.start_datetime)
         end_date_time_in_mills = self.date_to_millis(date_time=self.end_datetime)
+        # Taking start date time in current
+        pre_date_time_in_mills = start_date_time_in_mills
+        while pre_date_time_in_mills < end_date_time_in_mills:
+            market_data = self.get_market_data(pre_date_time_in_mills, pre_date_time_in_mills, interval=30)
+            if market_data is not None:
+                ib_high = market_data['High']
+                ib_low = market_data['Low']
+                data = {
+                    'Year': self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['year'],
+                    'month': self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['month'],
+                    "Day": self.get_datetime(self.millis_to_date(pre_date_time_in_mills))['day'],
+                    "Week Day": self.millis_to_date(pre_date_time_in_mills, ret_type='datetime').strftime("%a"),
+                    'Start Time': str(str(self.start_hour) + ' : ' + str(self.start_min)),
+                    'End Time': str(str(self.end_hour) + ' : ' + str(self.end_min)),
+                    "Trade Type": "Long",
+                    'Initial High': ib_high,
+                    'Initial Low': ib_low,
+                    "Initial Balance %": np.round(((ib_high - market_data['Low']) / market_data['Low']) * 100, 2),
+                    'Initial Volume': market_data['Volume'],
+                    'Initial Turnover': market_data['Turnover']
+                }
 
-        market_data = self.get_market_data(start_date_time_in_mills, start_date_time_in_mills, interval=self.interval)
-        if market_data is not None:
-            low_price = market_data['Low']
-            cur_date_time_in_mills = start_date_time_in_mills
-            while cur_date_time_in_mills < end_date_time_in_mills:
-                cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
-                cur_min = self.millis_to_date(cur_date_time_in_mills).minute
-                cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
-                if cur_time_millis > self.end_time_millis:
-                    cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                        cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                                 timedelta(days=1))
-                cur_market_data = self.get_market_data(
-                    cur_date_time_in_mills, cur_date_time_in_mills, interval=self.interval
-                )
-                if cur_market_data is not None:
-                    data = {}
-                    data["Count No"] = self.serial_number
-                    data["Date"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime(
-                        '%d/%b/%Y')
-                    data["Day"] = self.millis_to_date(cur_date_time_in_mills, ret_type='datetime').strftime("%a")
-                    data["Trade Type"] = "Long"
-                    data['Interval'] = self.interval
-                    data["IB_H"] = cur_market_data['High']
-                    data["IB_L"] = cur_market_data['Low']
-                    data["IB%"] = np.round(
-                        (
-                                (cur_market_data['High'] - cur_market_data['Low']
-                                 ) / cur_market_data['Low']) * 100, 2
-                    )
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    print(f'Checking for long trade, count {count}, '
-                          f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
+                # Taking current date time for increasing with one minute
+                pre_date_time_in_mills += (30 * self._one_minute_value_in_ms)
+                cur_date_time_in_mills = pre_date_time_in_mills
+                while True:
+                    # If current time goes above end time it will increase to next day start time
+                    cur_hour = self.millis_to_date(cur_date_time_in_mills).hour
+                    cur_min = self.millis_to_date(cur_date_time_in_mills).minute
+                    cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
+                    if cur_time_millis > self.end_time_millis:
+                        pre_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                            cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                     timedelta(days=1))
+                        break
 
-                    oi = self.get_open_interest(cur_date_time_in_mills)
-                    if oi:
-                        data['Open Interest'] = oi
-                        print(f'Open Interest {oi}')
-                    data['Volume'] = cur_market_data['Volume']
-                    data['Turnover'] = cur_market_data['Turnover']
-                    if cur_market_data['Close'] > low_price > cur_market_data['Low']:
-                        print("Condition for a Long Trade Have been Found Executing Long Trade - Entry Price: ",
-                              cur_market_data["Close"], "Executed at Time ",
-                              (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
-                        long_data = self.execute_long_trade(cur_market_data['Close'], cur_date_time_in_mills)
-                        if long_data is not None:
-                            long_data["Entry Price"] = cur_market_data['Close']
-                            long_data["Entry Time"] = str(self.millis_to_date(cur_date_time_in_mills, ret_type='str'))
-                            data.update(long_data)
-                            data_list.append(data)
-                            cur_date_time_in_mills = self.date_to_millis(self.millis_to_date(
-                                cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
-                                                                         timedelta(days=1))
+                    cur_market_data = self.get_market_data(
+                        cur_date_time_in_mills, cur_date_time_in_mills, interval=1)
+                    if cur_market_data is not None:
+                        data["High"] = cur_market_data['High']
+                        data["Low"] = cur_market_data['Low']
+                        data["High to Low %"] = np.round(
+                            (
+                                    (cur_market_data['High'] - cur_market_data['Low']
+                                     ) / cur_market_data['Low']) * 100, 2
+                        )
+                        data['Volume'] = cur_market_data['Volume']
+                        data['Turnover'] = cur_market_data['Turnover']
+                        print(f'Checking for long trade, count {count}, '
+                              f'at {self.millis_to_date(cur_date_time_in_mills, ret_type="str")}')
 
-                    cur_date_time_in_mills += (self._one_minute_value_in_ms * self.interval)
+                        oi = self.get_open_interest(cur_date_time_in_mills)
+                        if oi:
+                            data['Open Interest'] = oi
+                            print(f'Open Interest {oi}')
+
+                        if cur_market_data['Close'] > ib_low > cur_market_data['Low']:
+                            print("Condition for a Long Trade Have been Found Executing Long Trade - Entry Price: ",
+                                  cur_market_data["Close"], "Executed at Time ",
+                                  (self.millis_to_date(cur_date_time_in_mills, ret_type='str')))
+                            long_data = self.execute_short_trade(cur_market_data['Close'], pre_date_time_in_mills)
+                            if long_data is not None:
+                                long_data["Entry Price"] = cur_market_data['Close']
+                                long_data["Entry Time"] = self.millis_to_date(
+                                    cur_date_time_in_mills).strftime('%H:%M:%S.%f %p')
+                                data.update(long_data)
+                                data_list.append(data)
+                                pre_date_time_in_mills = self.date_to_millis(self.millis_to_date(
+                                    cur_date_time_in_mills).replace(hour=self.start_hour, minute=self.start_min) +
+                                                                             timedelta(days=1))
+                                break
+                    cur_date_time_in_mills += self._one_minute_value_in_ms
                     self.serial_number += 1
                     count += 1
 
@@ -338,7 +350,7 @@ class CheckAndExecuteTrade(BybitConnector):
         While current high price greater than (entry price + entry price * stop loss percentage)
 
         No trade situation:-
-        While candel_start_date_time_in_ms is greater than (market data start time - one min value * 30) + one day value
+        if current time greater than end time
         if current close price less than entry price it is win else it is loss
         """
         short_data = {}
@@ -348,8 +360,7 @@ class CheckAndExecuteTrade(BybitConnector):
             cur_hour = self.millis_to_date(candel_start_date_time_in_ms).hour
             cur_min = self.millis_to_date(candel_start_date_time_in_ms).minute
             cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
-            if cur_time_millis > self.end_time_millis:
-                return None
+
             market_data = self.get_market_data(
                 candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
             )
@@ -383,9 +394,7 @@ class CheckAndExecuteTrade(BybitConnector):
                     return short_data
 
                 candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
-                if candel_start_date_time_in_ms > (
-                        (self.date_to_millis(market_data['Start Time']) - (self._one_minute_value_in_ms * 30)) +
-                        self._one_day_value_in_ms):
+                if cur_time_millis > self.end_time_millis:
                     print("Trade Never Reached TP and Next day has has arrived, Closing at: " +
                           str(market_data['Close']))
 
@@ -416,7 +425,7 @@ class CheckAndExecuteTrade(BybitConnector):
         While current low price less than (entry price + entry price * stop loss percentage)
 
         No trade situation:-
-        while candel_start_date_time_in_ms greater than (market data start time - one min value * 30) + one day value
+        if candel_start_date_time_in_ms greater than (market data start time - one min value * 30) + one day value
         if current close price less than entry price it is win else it is loss
         """
 
@@ -427,8 +436,7 @@ class CheckAndExecuteTrade(BybitConnector):
             cur_hour = self.millis_to_date(candel_start_date_time_in_ms).hour
             cur_min = self.millis_to_date(candel_start_date_time_in_ms).minute
             cur_time_millis = (cur_hour * 60 * 60000) + (cur_min * 60000)
-            if cur_time_millis > self.end_time_millis:
-                return None
+
             market_data = self.get_market_data(
                 candel_start_date_time_in_ms, candel_start_date_time_in_ms, interval=self.interval
             )
@@ -459,8 +467,7 @@ class CheckAndExecuteTrade(BybitConnector):
                     return long_data
 
                 candel_start_date_time_in_ms += (self._one_minute_value_in_ms * self.interval)
-                if candel_start_date_time_in_ms > (
-                        (market_data['Start Time'] - (self._one_minute_value_in_ms * 30)) + self._one_day_value_in_ms):
+                if cur_time_millis > self.end_time_millis:
                     print("Trade Never Reached TP and Next day has has arrived, Closing at: " +
                           str(market_data['Close']))
                     if market_data['Close'] < entry_price:
@@ -482,32 +489,38 @@ class CheckAndExecuteTrade(BybitConnector):
                           f'{self.millis_to_date(candel_start_date_time_in_ms, ret_type="str")}')
                     count += 1
 
+
 class InitiateBybitTrade(CheckAndExecuteTrade):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         pass
 
-    def check_for_both_long_and_short_trade(self) -> None:
+    def check_both_long_and_short_trade(self) -> None:
         short_trade = threading.Thread(target=self.check_short_trade)
-        long_trade = threading.Thread(target=self.check_for_long_trade)
+        long_trade = threading.Thread(target=self.check_long_trade)
         short_trade.start()
         long_trade.start()
         short_trade.join()
         long_trade.join()
 
-    def bitcoin_trade(self, trade_selection,) -> pd.DataFrame:
+    def bitcoin_trade(self, trade_selection) -> pd.DataFrame:
         if trade_selection == 'Short':
             self.check_short_trade()
         elif trade_selection == 'Long':
-            self.check_for_long_trade()
+            self.check_long_trade()
         elif trade_selection == 'Both':
-            self.check_for_both_long_and_short_trade()
+            self.check_both_long_and_short_trade()
+        print(data_list)
         return pd.DataFrame(data_list, index=None)
 
 
 if __name__ == '__main__':
     try:
-        pass
+        initiate_trade = InitiateBybitTrade(
+            dt(2020, 1, 1, 5, 30),
+            dt(2024, 1, 1, 11, 59), 5, 30)
+        data = initiate_trade.bitcoin_trade('Both')
+        DataIngesion().update_bybit_data(data)
     except Exception as e:
         raise CustomException(e, sys)
 

@@ -1,18 +1,9 @@
-from src.logger import logging
-from src.exception import CustomException
 from src.YahooFianance import *
-import os
-import sys
-import pandas as pd
-import numpy as np
-from typing import *
-from dataclasses import dataclass
+from src.Data_plot import *
 from src.Data_ingesion import *
 from src.Bybit_manager import *
-import streamlit as st
 from src.utils import *
-import time
-from datetime import timedelta
+import streamlit as st
 
 
 class InitializeApp:
@@ -35,7 +26,7 @@ class InitializeApp:
             data = self.sym_tickers_data
             col1, col2, col3 = st.columns(3)
             with col1:
-                name_selection = st.selectbox('Company', ['Select'] + list(data['Name']))
+                name_selection = st.selectbox('Stock', ['Select'] + list(data['Name']))
             with col2:
                 interval = st.selectbox('Interval', YfinanceConfigure.valid_intervals)
             with col3:
@@ -79,42 +70,49 @@ class InitializeApp:
                 )
                 start_hour = st.slider('Start hour', value=5, min_value=0, max_value=23)
                 start_min = st.slider('Start min', value=30, min_value=0, max_value=55, step=5)
-                start_datetime = dt(start_date.year, start_date.month, start_date.day, start_hour, start_min)
+
             with col2:
                 end_date = st.date_input(
                     'End Date', value='today', min_value=dt(2000, 1, 1), max_value=dt.now()
                 )
                 end_hour = st.slider('End hour', value=9, min_value=0, max_value=23)
                 end_min = st.slider('End min', value=30, min_value=0, max_value=55, step=5)
-                end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
+
             with col3:
                 selection = st.selectbox('Select trade type', ['Both', 'Short', 'Long'])
-                interval = st.selectbox('Interval', BybitConfig.bybit_intervals)
+                tp_percent = st.number_input('Take Profit %', min_value=0.10, max_value=100.00, value=0.25, step=0.05)
+                sl_percent = st.number_input('Stop Loss %', min_value=0.10, max_value=100.00, value=0.50, step=0.05)
 
             if st.form_submit_button('Start Now'):
                 try:
                     check_internet()
+                    start_datetime = dt(start_date.year, start_date.month, start_date.day, start_hour, start_min)
+                    end_datetime = dt(end_date.year, end_date.month, end_date.day, end_hour, end_min)
                     if start_datetime < end_datetime:
-                        initiate_trade = InitiateBybitTrade(start_datetime, end_datetime, interval)
+                        initiate_trade = InitiateBybitTrade(start_datetime, end_datetime, tp_percent, sl_percent)
                         make_textdoc('bybit_datetime', str(dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")))
+
                         if selection == 'Short':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
                                 DataIngesion().update_bybit_data(data)
-                                DataIngesion().update_gsheet(data)
+                                # DataIngesion().update_gsheet(data)
+                                # DataIngesion().update_mysql_server()
                             st.dataframe(data)
                         if selection == 'Long':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
                                 DataIngesion().update_bybit_data(data)
-                                DataIngesion().update_gsheet(data)
+                                # DataIngesion().update_gsheet(data)
+                                # DataIngesion().update_mysql_server()
                             st.dataframe(data)
                         if selection == 'Both':
                             with st.spinner('Wait while checking...'):
                                 data = initiate_trade.bitcoin_trade(selection)
+                                # data.to_csv(DataIngesionConfig.bybit_test_data, index=False)
                                 DataIngesion().update_bybit_data(data)
                                 # DataIngesion().update_gsheet(data)
-                                # data.to_csv(DataIngesionConfig.bybit_test_data, index=False)
+                                # DataIngesion().update_mysql_server()
                             st.dataframe(data)
                     else:
                         st.warning('Check Start date and End date')
@@ -124,9 +122,18 @@ class InitializeApp:
                     raise CustomException(e, sys)
             st.caption(f'{dt.now().strftime("%d/%b/%Y %H:%M:%S.%f %p")}')
 
-        if type(DataIngesion().get_bybit_data()) is not None:
+        try:
             st.caption(f'Old data from: {read_textdoc("bybit_datetime")}')
-            st.dataframe(DataIngesion().get_bybit_data())
+            tab1, tab2 = st.tabs(['Data', 'Charts'])
+            with tab1:
+                st.dataframe(DataIngesion().get_bybit_data())
+            with tab2:
+                pass
+                # DataPlot(DataIngesion().get_bybit_data()).bybit_win_loss_bar_chart()
+        except Exception as e:
+            print(f'Error {e}')
+
+
 
 
 

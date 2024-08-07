@@ -1,10 +1,14 @@
 streamlit
 pandas
 numpy
-pybit==5.5.0
 scikit-learn
 openpyxl
 yfinance
-
+pybit==5.5.0
+matplotlib==3.8.4
+seaborn==0.13.0
+gspread==6.1.2
+gspread-dataframe==4.0.0
+oauth2client
 
 -e .
